@@ -12,6 +12,13 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
 
 # next.js
 /.next/

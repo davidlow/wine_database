@@ -1,7 +1,14 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ['better-sqlite3'],
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'images.openfoodfacts.org' },
+      { protocol: 'https', hostname: 'static.openfoodfacts.org' },
+      { protocol: 'https', hostname: '**.openfoodfacts.org' },
+    ],
+  },
 };
 
 export default nextConfig;

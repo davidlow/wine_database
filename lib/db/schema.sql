@@ -1,0 +1,60 @@
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wines (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  producer TEXT,
+  variety TEXT,
+  wine_type TEXT CHECK (wine_type IN ('red', 'white', 'rosé', 'sparkling', 'dessert', 'fortified', 'other')),
+  region TEXT,
+  appellation TEXT,
+  country TEXT,
+  vintage_year INTEGER,
+  description TEXT,
+  average_price REAL,
+  alcohol_content REAL,
+  barcode TEXT UNIQUE,
+  image_url TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cellar_inventory (
+  id TEXT PRIMARY KEY,
+  wine_id TEXT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  location TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  purchase_price REAL,
+  purchase_date TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  CONSTRAINT positive_quantity CHECK (quantity >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS bottle_transactions (
+  id TEXT PRIMARY KEY,
+  wine_id TEXT REFERENCES wines(id) ON DELETE SET NULL,
+  profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
+  cellar_inventory_id TEXT,
+  transaction_type TEXT NOT NULL CHECK (transaction_type IN ('add', 'remove', 'move')),
+  quantity INTEGER NOT NULL,
+  location TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wines_barcode ON wines(barcode);
+CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(name);
+CREATE INDEX IF NOT EXISTS idx_cellar_wine_id ON cellar_inventory(wine_id);
+CREATE INDEX IF NOT EXISTS idx_cellar_profile_id ON cellar_inventory(profile_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_wine_id ON bottle_transactions(wine_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_profile_id ON bottle_transactions(profile_id);
