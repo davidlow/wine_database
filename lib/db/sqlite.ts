@@ -13,24 +13,41 @@ import type {
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
-let db: Database.Database | null = null;
+// Read schema once at module load — it's static, no need to re-read on every reconnect.
+const SCHEMA = fs.readFileSync(path.join(process.cwd(), 'lib', 'db', 'schema.sql'), 'utf-8');
+
+// In Next.js dev mode, hot reload re-evaluates modules and resets module-level vars,
+// forcing a new DB connection (and schema re-run) on every file save. Persisting via
+// globalThis survives module re-evaluation and keeps the connection alive across reloads.
+// Tests use ':memory:' which is intentionally NOT persisted here; closeSqliteDb() resets
+// it between test cases via the module-level memoryDb variable instead.
+const g = globalThis as typeof globalThis & { __wineSqliteDb?: Database.Database };
+let memoryDb: Database.Database | null = null;
+
+function openDb(resolvedPath: string): Database.Database {
+  const conn = new Database(resolvedPath);
+  conn.pragma('journal_mode = WAL');
+  conn.pragma('foreign_keys = ON');
+  conn.pragma('synchronous = NORMAL');    // safe with WAL; avoids fsync on every write
+  conn.pragma('cache_size = -20000');     // 20 MB page cache (default is ~2 MB)
+  conn.pragma('temp_store = MEMORY');     // temp tables and indices stay in RAM
+  conn.pragma('mmap_size = 268435456');  // 256 MB memory-mapped reads
+  conn.exec(SCHEMA);
+  return conn;
+}
 
 function getDb(): Database.Database {
-  if (db) return db;
-
   const dbPath = process.env.SQLITE_DB_PATH ?? './wine.db';
-  // ':memory:' is a special SQLite path for an in-memory DB — don't resolve it as a file path
-  const resolvedPath = dbPath === ':memory:' ? ':memory:' : path.resolve(process.cwd(), dbPath);
 
-  db = new Database(resolvedPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  if (dbPath === ':memory:') {
+    if (!memoryDb) memoryDb = openDb(':memory:');
+    return memoryDb;
+  }
 
-  const schemaPath = path.join(process.cwd(), 'lib', 'db', 'schema.sql');
-  const schema = fs.readFileSync(schemaPath, 'utf-8');
-  db.exec(schema);
-
-  return db;
+  if (!g.__wineSqliteDb) {
+    g.__wineSqliteDb = openDb(path.resolve(process.cwd(), dbPath));
+  }
+  return g.__wineSqliteDb;
 }
 
 // better-sqlite3 named params require ALL referenced keys to exist (even as null)
@@ -43,10 +60,8 @@ const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'created_at', 'upd
 const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
 
 export function closeSqliteDb(): void {
-  if (db) {
-    db.close();
-    db = null;
-  }
+  if (memoryDb) { memoryDb.close(); memoryDb = null; }
+  if (g.__wineSqliteDb) { g.__wineSqliteDb.close(); g.__wineSqliteDb = undefined; }
 }
 
 export const sqliteAdapter: DbAdapter = {
