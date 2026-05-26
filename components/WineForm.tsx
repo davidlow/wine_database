@@ -99,7 +99,7 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
         <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
           Wine data auto-filled from{' '}
           {lookupResult.source === 'database' ? 'your database' :
-           lookupResult.source === 'openfoodfacts' ? 'Open Food Facts' : 'label scan'}.
+           lookupResult.source === 'openfoodfacts' ? 'Open Food Facts' : 'manual entry'}.
           Please review and correct as needed.
         </div>
       )}
