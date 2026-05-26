@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, MapPin, Wine } from 'lucide-react';
-import type { CellarInventory, Profile } from '@/types';
+import type { CellarInventory, Profile, BottleTransaction } from '@/types';
 import { useProfile } from '@/hooks/useProfile';
 import TransactionLog from '@/components/TransactionLog';
 import BottleManager from '@/components/BottleManager';
@@ -14,7 +14,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
   const { profiles } = useProfile();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [inventory, setInventory] = useState<CellarInventory[]>([]);
-  const [transactions, setTransactions] = useState<[]>([]);
+  const [transactions, setTransactions] = useState<BottleTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'inventory' | 'transactions'>('inventory');
   const [selectedWineId, setSelectedWineId] = useState<string | null>(null);

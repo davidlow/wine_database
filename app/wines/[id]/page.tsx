@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, Edit, Trash2, MapPin, Calendar, DollarSign, Percent } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
-import type { Wine, CellarInventory } from '@/types';
+import type { Wine, CellarInventory, BottleTransaction } from '@/types';
 import BottleManager from '@/components/BottleManager';
 import TransactionLog from '@/components/TransactionLog';
 import { cn, wineTypeLabel, wineTypeColor, formatPrice } from '@/lib/utils';
@@ -18,7 +18,7 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<'inventory' | 'transactions'>('inventory');
-  const [transactions, setTransactions] = useState<CellarInventory[]>([]);
+  const [transactions, setTransactions] = useState<BottleTransaction[]>([]);
 
   const loadInventory = async () => {
     if (!profiles.length) return;
@@ -32,13 +32,27 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
     setInventory(results.flat());
   };
 
+  const loadTransactions = async () => {
+    if (!profiles.length) return;
+    const txArrays = await Promise.all(
+      profiles.map(async (p) => {
+        const res = await fetch(`/api/transactions?profile_id=${p.id}`);
+        const items: BottleTransaction[] = res.ok ? await res.json() : [];
+        return items.filter((t) => t.wine_id === id);
+      })
+    );
+    // Merge and sort descending by created_at
+    const merged = txArrays.flat().sort((a, b) => b.created_at.localeCompare(a.created_at));
+    setTransactions(merged);
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const res = await fetch(`/api/wines/${id}`);
         if (res.ok) setWine(await res.json());
-        await loadInventory();
+        await Promise.all([loadInventory(), loadTransactions()]);
       } finally {
         setLoading(false);
       }
@@ -177,6 +191,12 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             inventory={inventory}
             onRefresh={loadInventory}
           />
+        )}
+
+        {activeTab === 'transactions' && (
+          <div className="rounded-lg border bg-card px-4 py-2">
+            <TransactionLog transactions={transactions} />
+          </div>
         )}
       </div>
     </div>

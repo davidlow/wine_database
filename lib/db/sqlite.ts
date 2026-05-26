@@ -93,7 +93,7 @@ export const sqliteAdapter: DbAdapter = {
         vintage_year, description, average_price, alcohol_content, barcode, image_url, created_at, updated_at)
       VALUES (@id, @name, @producer, @variety, @wine_type, @region, @appellation, @country,
         @vintage_year, @description, @average_price, @alcohol_content, @barcode, @image_url, @created_at, @updated_at)
-    `).run(nullify(wine as Record<string, unknown>, WINE_COLS));
+    `).run(nullify(wine as unknown as Record<string, unknown>, WINE_COLS));
     return wine;
   },
 
@@ -108,7 +108,7 @@ export const sqliteAdapter: DbAdapter = {
         description=@description, average_price=@average_price, alcohol_content=@alcohol_content,
         barcode=@barcode, image_url=@image_url, updated_at=@updated_at
       WHERE id=@id
-    `).run(nullify(updated as Record<string, unknown>, WINE_COLS));
+    `).run(nullify(updated as unknown as Record<string, unknown>, WINE_COLS));
     return updated;
   },
 
@@ -133,7 +133,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO profiles (id, user_id, name, description, created_at, updated_at)
       VALUES (@id, @user_id, @name, @description, @created_at, @updated_at)
-    `).run(nullify(profile as Record<string, unknown>, PROFILE_COLS));
+    `).run(nullify(profile as unknown as Record<string, unknown>, PROFILE_COLS));
     return profile;
   },
 
@@ -145,7 +145,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       UPDATE profiles SET name=@name, description=@description, updated_at=@updated_at
       WHERE id=@id AND user_id=@user_id
-    `).run(nullify(updated as Record<string, unknown>, PROFILE_COLS));
+    `).run(nullify(updated as unknown as Record<string, unknown>, PROFILE_COLS));
     return updated;
   },
 
@@ -230,7 +230,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO cellar_inventory (id, wine_id, profile_id, location, quantity, purchase_price, purchase_date, notes, created_at, updated_at)
       VALUES (@id, @wine_id, @profile_id, @location, @quantity, @purchase_price, @purchase_date, @notes, @created_at, @updated_at)
-    `).run(nullify(inventory as Record<string, unknown>, INVENTORY_COLS));
+    `).run(nullify(inventory as unknown as Record<string, unknown>, INVENTORY_COLS));
 
     d.prepare(`
       INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, created_at)
@@ -249,7 +249,7 @@ export const sqliteAdapter: DbAdapter = {
       UPDATE cellar_inventory SET location=@location, quantity=@quantity, purchase_price=@purchase_price,
         purchase_date=@purchase_date, notes=@notes, updated_at=@updated_at
       WHERE id=@id
-    `).run(nullify(updated as Record<string, unknown>, INVENTORY_COLS));
+    `).run(nullify(updated as unknown as Record<string, unknown>, INVENTORY_COLS));
     return updated;
   },
 

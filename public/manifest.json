@@ -1,0 +1,16 @@
+{
+  "name": "Wine Cellar",
+  "short_name": "Wine Cellar",
+  "description": "Personal wine inventory and cellar management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}
