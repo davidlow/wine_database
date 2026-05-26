@@ -3,7 +3,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import WineForm from '@/components/WineForm';
 
-const mockSubmit = vi.fn().mockResolvedValue(undefined);
+import type { Wine } from '@/types';
+type WineFormData = Omit<Wine, 'id' | 'created_at' | 'updated_at'>;
+const mockSubmit = vi.fn((_data: WineFormData): Promise<void> => Promise.resolve());
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -12,7 +14,7 @@ beforeEach(() => {
 describe('WineForm', () => {
   it('renders required fields', () => {
     render(<WineForm onSubmit={mockSubmit} />);
-    expect(screen.getByPlaceholderText(/e\.g\. Opus One/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('e.g. Opus One')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save wine/i })).toBeInTheDocument();
   });
 
@@ -28,7 +30,7 @@ describe('WineForm', () => {
     const user = userEvent.setup();
     render(<WineForm onSubmit={mockSubmit} />);
 
-    await user.type(screen.getByPlaceholderText(/e\.g\. Opus One/i), 'Test Wine');
+    await user.type(screen.getByPlaceholderText('e.g. Opus One'), 'Test Wine');
     await user.type(screen.getByPlaceholderText(/e\.g\. Opus One Winery/i), 'Test Winery');
     await user.click(screen.getByRole('button', { name: /save wine/i }));
 
@@ -72,11 +74,11 @@ describe('WineForm', () => {
   });
 
   it('disables submit button while submitting', async () => {
-    const slowSubmit = vi.fn(() => new Promise((r) => setTimeout(r, 500)));
+    const slowSubmit = vi.fn((_data: WineFormData): Promise<void> => new Promise((r) => setTimeout(r, 500)));
     const user = userEvent.setup();
     render(<WineForm onSubmit={slowSubmit} />);
 
-    await user.type(screen.getByPlaceholderText(/e\.g\. Opus One/i), 'Test Wine');
+    await user.type(screen.getByPlaceholderText('e.g. Opus One'), 'Test Wine');
     await user.click(screen.getByRole('button', { name: /save wine/i }));
 
     await waitFor(() => {

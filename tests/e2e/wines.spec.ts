@@ -70,7 +70,7 @@ test.describe('Wine Catalog', () => {
     const url = page.url();
     await page.goto(url.replace(/\/$/, '') + '/edit');
 
-    await page.getByDisplayValue('Edit Test Wine').clear();
+    await page.locator('input[value="Edit Test Wine"]').clear();
     await page.getByPlaceholder(/e\.g\. Opus One/i).fill('Edited Wine Name');
     await page.getByRole('button', { name: /update wine/i }).click();
 

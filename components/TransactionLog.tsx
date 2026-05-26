@@ -15,7 +15,7 @@ export default function TransactionLog({ transactions }: Props) {
     <div className="space-y-1">
       {transactions.map((t) => {
         const isAdd = t.transaction_type === 'add';
-        const wineName = (t.wine as Record<string, unknown>)?.name as string | undefined;
+        const wineName = t.wine?.name;
         return (
           <div key={t.id} className="flex items-center gap-3 py-2 border-b last:border-0">
             {isAdd

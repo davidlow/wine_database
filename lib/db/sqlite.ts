@@ -19,7 +19,8 @@ function getDb(): Database.Database {
   if (db) return db;
 
   const dbPath = process.env.SQLITE_DB_PATH ?? './wine.db';
-  const resolvedPath = path.resolve(process.cwd(), dbPath);
+  // ':memory:' is a special SQLite path for an in-memory DB — don't resolve it as a file path
+  const resolvedPath = dbPath === ':memory:' ? ':memory:' : path.resolve(process.cwd(), dbPath);
 
   db = new Database(resolvedPath);
   db.pragma('journal_mode = WAL');
@@ -31,6 +32,15 @@ function getDb(): Database.Database {
 
   return db;
 }
+
+// better-sqlite3 named params require ALL referenced keys to exist (even as null)
+function nullify(obj: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  return Object.fromEntries(keys.map(k => [k, obj[k] ?? null]));
+}
+
+const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'barcode', 'image_url', 'created_at', 'updated_at'] as const;
+const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'created_at', 'updated_at'] as const;
+const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
 
 export function closeSqliteDb(): void {
   if (db) {
@@ -83,7 +93,7 @@ export const sqliteAdapter: DbAdapter = {
         vintage_year, description, average_price, alcohol_content, barcode, image_url, created_at, updated_at)
       VALUES (@id, @name, @producer, @variety, @wine_type, @region, @appellation, @country,
         @vintage_year, @description, @average_price, @alcohol_content, @barcode, @image_url, @created_at, @updated_at)
-    `).run(wine);
+    `).run(nullify(wine as Record<string, unknown>, WINE_COLS));
     return wine;
   },
 
@@ -98,7 +108,7 @@ export const sqliteAdapter: DbAdapter = {
         description=@description, average_price=@average_price, alcohol_content=@alcohol_content,
         barcode=@barcode, image_url=@image_url, updated_at=@updated_at
       WHERE id=@id
-    `).run(updated);
+    `).run(nullify(updated as Record<string, unknown>, WINE_COLS));
     return updated;
   },
 
@@ -123,7 +133,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO profiles (id, user_id, name, description, created_at, updated_at)
       VALUES (@id, @user_id, @name, @description, @created_at, @updated_at)
-    `).run(profile);
+    `).run(nullify(profile as Record<string, unknown>, PROFILE_COLS));
     return profile;
   },
 
@@ -135,7 +145,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       UPDATE profiles SET name=@name, description=@description, updated_at=@updated_at
       WHERE id=@id AND user_id=@user_id
-    `).run(updated);
+    `).run(nullify(updated as Record<string, unknown>, PROFILE_COLS));
     return updated;
   },
 
@@ -194,7 +204,7 @@ export const sqliteAdapter: DbAdapter = {
         quantity: existing.quantity + qty,
         updated_at: now,
       };
-      d.prepare('UPDATE cellar_inventory SET quantity = @quantity, updated_at = @updated_at WHERE id = @id').run(updated);
+      d.prepare('UPDATE cellar_inventory SET quantity = @quantity, updated_at = @updated_at WHERE id = @id').run({ id: updated.id, quantity: updated.quantity, updated_at: updated.updated_at });
 
       d.prepare(`
         INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, created_at)
@@ -220,7 +230,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO cellar_inventory (id, wine_id, profile_id, location, quantity, purchase_price, purchase_date, notes, created_at, updated_at)
       VALUES (@id, @wine_id, @profile_id, @location, @quantity, @purchase_price, @purchase_date, @notes, @created_at, @updated_at)
-    `).run(inventory);
+    `).run(nullify(inventory as Record<string, unknown>, INVENTORY_COLS));
 
     d.prepare(`
       INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, created_at)
@@ -239,7 +249,7 @@ export const sqliteAdapter: DbAdapter = {
       UPDATE cellar_inventory SET location=@location, quantity=@quantity, purchase_price=@purchase_price,
         purchase_date=@purchase_date, notes=@notes, updated_at=@updated_at
       WHERE id=@id
-    `).run(updated);
+    `).run(nullify(updated as Record<string, unknown>, INVENTORY_COLS));
     return updated;
   },
 

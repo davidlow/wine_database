@@ -8,9 +8,9 @@ export function useWineSearch(initialParams: WineSearchParams = {}) {
   const [wines, setWines] = useState<Wine[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const search = useCallback(async (searchParams: WineSearchParams) => {
+  const search = useCallback(async (searchParams: WineSearchParams) => { // eslint-disable-line react-hooks/exhaustive-deps
     setLoading(true);
     setError(null);
     try {
