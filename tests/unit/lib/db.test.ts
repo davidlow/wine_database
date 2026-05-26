@@ -656,4 +656,125 @@ describe('Cellar inventory', () => {
     const inv = await sqliteAdapter.getCellarInventory(profileId, userId);
     expect(inv.find((i) => i.wine_id === wine2.id)).toBeUndefined();
   });
+
+  // ─── moveBottle ──────────────────────────────────────────────────────────────
+
+  it('moves all bottles to a new location', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack A', quantity: 3 },
+      userId
+    );
+
+    await sqliteAdapter.moveBottle(
+      { cellar_inventory_id: item.id, new_location: 'Fridge', quantity: 3 },
+      userId
+    );
+
+    const inv = await sqliteAdapter.getCellarInventory(profileId, userId);
+    expect(inv.find((i) => i.id === item.id)).toBeUndefined(); // source zeroed out
+    const dest = inv.find((i) => i.location === 'Fridge');
+    expect(dest).toBeDefined();
+    expect(dest!.quantity).toBe(3);
+  });
+
+  it('moves partial quantity, leaving remainder at source', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack B', quantity: 4 },
+      userId
+    );
+
+    await sqliteAdapter.moveBottle(
+      { cellar_inventory_id: item.id, new_location: 'Fridge', quantity: 2 },
+      userId
+    );
+
+    const inv = await sqliteAdapter.getCellarInventory(profileId, userId);
+    const source = inv.find((i) => i.id === item.id);
+    const dest = inv.find((i) => i.location === 'Fridge');
+
+    expect(source!.quantity).toBe(2);
+    expect(dest!.quantity).toBe(2);
+  });
+
+  it('merges into existing destination entry', async () => {
+    const source = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack C', quantity: 2 },
+      userId
+    );
+    await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Fridge', quantity: 3 },
+      userId
+    );
+
+    await sqliteAdapter.moveBottle(
+      { cellar_inventory_id: source.id, new_location: 'Fridge', quantity: 2 },
+      userId
+    );
+
+    const inv = await sqliteAdapter.getCellarInventory(profileId, userId);
+    const fridge = inv.find((i) => i.location === 'Fridge');
+    expect(fridge!.quantity).toBe(5); // 3 existing + 2 moved
+  });
+
+  it('records a move transaction with route in location field', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack D', quantity: 2 },
+      userId
+    );
+
+    await sqliteAdapter.moveBottle(
+      { cellar_inventory_id: item.id, new_location: 'Shelf 1', quantity: 1 },
+      userId
+    );
+
+    const transactions = await sqliteAdapter.getTransactions(profileId, userId);
+    const moveTx = transactions.find((t) => t.transaction_type === 'move');
+    expect(moveTx).toBeDefined();
+    expect(moveTx!.quantity).toBe(1);
+    expect(moveTx!.location).toBe('Rack D → Shelf 1');
+  });
+
+  it('move transaction preserves optional notes', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack E', quantity: 2 },
+      userId
+    );
+
+    await sqliteAdapter.moveBottle(
+      { cellar_inventory_id: item.id, new_location: 'Wine Fridge', quantity: 1, notes: 'For dinner' },
+      userId
+    );
+
+    const transactions = await sqliteAdapter.getTransactions(profileId, userId);
+    const moveTx = transactions.find((t) => t.transaction_type === 'move');
+    expect(moveTx!.notes).toBe('For dinner');
+  });
+
+  it('throws when moving more than available', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack F', quantity: 2 },
+      userId
+    );
+
+    await expect(
+      sqliteAdapter.moveBottle({ cellar_inventory_id: item.id, new_location: 'Fridge', quantity: 5 }, userId)
+    ).rejects.toThrow();
+  });
+
+  it('throws when source and destination are the same location', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: 'Rack G', quantity: 2 },
+      userId
+    );
+
+    await expect(
+      sqliteAdapter.moveBottle({ cellar_inventory_id: item.id, new_location: 'Rack G', quantity: 1 }, userId)
+    ).rejects.toThrow('same location');
+  });
+
+  it('throws when moving from non-existent inventory entry', async () => {
+    await expect(
+      sqliteAdapter.moveBottle({ cellar_inventory_id: 'nonexistent', new_location: 'Fridge', quantity: 1 }, userId)
+    ).rejects.toThrow();
+  });
 });

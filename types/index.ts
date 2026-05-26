@@ -92,6 +92,13 @@ export interface RemoveBottleInput {
   notes?: string;
 }
 
+export interface MoveBottleInput {
+  cellar_inventory_id: string;
+  new_location: string;
+  quantity: number;
+  notes?: string;
+}
+
 export interface DbAdapter {
   // Wines
   getWines(params: WineSearchParams): Promise<Wine[]>;
@@ -114,6 +121,7 @@ export interface DbAdapter {
   addBottle(input: AddBottleInput, userId: string): Promise<CellarInventory>;
   updateBottleInventory(id: string, data: Partial<Pick<CellarInventory, 'location' | 'quantity' | 'purchase_price' | 'purchase_date' | 'notes'>>): Promise<CellarInventory>;
   removeBottle(input: RemoveBottleInput, userId: string): Promise<void>;
+  moveBottle(input: MoveBottleInput, userId: string): Promise<void>;
 
   // Transactions
   getTransactions(profileId: string, userId: string, limit?: number): Promise<BottleTransaction[]>;

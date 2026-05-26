@@ -10,6 +10,7 @@ import type {
   WineSearchParams,
   AddBottleInput,
   RemoveBottleInput,
+  MoveBottleInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
@@ -283,6 +284,60 @@ export const sqliteAdapter: DbAdapter = {
       INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, notes, created_at)
       VALUES (?, ?, ?, ?, 'remove', ?, ?, ?, ?)
     `).run(generateId(), existing.wine_id, existing.profile_id, input.cellar_inventory_id, input.quantity, existing.location, input.notes ?? null, now);
+  },
+
+  async moveBottle(input: MoveBottleInput, _userId: string): Promise<void> {
+    const d = getDb();
+    const newLoc = input.new_location.trim();
+
+    d.transaction(() => {
+      const source = d.prepare('SELECT * FROM cellar_inventory WHERE id = ?').get(input.cellar_inventory_id) as CellarInventory | undefined;
+      if (!source) throw new Error(`Inventory ${input.cellar_inventory_id} not found`);
+      if (input.quantity > source.quantity) throw new Error('Cannot move more bottles than available');
+      if (newLoc === source.location) throw new Error('Source and destination are the same location');
+
+      const now = new Date().toISOString();
+
+      // Decrement (or zero out) the source entry
+      d.prepare('UPDATE cellar_inventory SET quantity = ?, updated_at = ? WHERE id = ?')
+        .run(source.quantity - input.quantity, now, source.id);
+
+      // Upsert the destination entry
+      const dest = d.prepare(
+        'SELECT * FROM cellar_inventory WHERE wine_id = ? AND profile_id = ? AND location = ?'
+      ).get(source.wine_id, source.profile_id, newLoc) as CellarInventory | undefined;
+
+      if (dest) {
+        d.prepare('UPDATE cellar_inventory SET quantity = ?, updated_at = ? WHERE id = ?')
+          .run(dest.quantity + input.quantity, now, dest.id);
+      } else {
+        const entry: CellarInventory = {
+          id: generateId(),
+          wine_id: source.wine_id,
+          profile_id: source.profile_id,
+          location: newLoc,
+          quantity: input.quantity,
+          purchase_price: source.purchase_price,
+          purchase_date: source.purchase_date,
+          notes: source.notes,
+          created_at: now,
+          updated_at: now,
+        };
+        d.prepare(`
+          INSERT INTO cellar_inventory (id, wine_id, profile_id, location, quantity, purchase_price, purchase_date, notes, created_at, updated_at)
+          VALUES (@id, @wine_id, @profile_id, @location, @quantity, @purchase_price, @purchase_date, @notes, @created_at, @updated_at)
+        `).run(nullify(entry as unknown as Record<string, unknown>, INVENTORY_COLS));
+      }
+
+      // Record a 'move' transaction; store the route in the location field
+      d.prepare(`
+        INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, notes, created_at)
+        VALUES (?, ?, ?, ?, 'move', ?, ?, ?, ?)
+      `).run(
+        generateId(), source.wine_id, source.profile_id, source.id,
+        input.quantity, `${source.location} → ${newLoc}`, input.notes ?? null, now,
+      );
+    })();
   },
 
   // --- Transactions ---
