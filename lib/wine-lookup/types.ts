@@ -15,5 +15,6 @@ export interface WineLookupResult {
   average_price?: number;
   alcohol_content?: number;
   image_url?: string;
-  source?: 'database' | 'openfoodfacts' | 'manual';
+  source?: 'database' | 'openfoodfacts' | 'label-scan' | 'manual';
+  confidence?: number;
 }
