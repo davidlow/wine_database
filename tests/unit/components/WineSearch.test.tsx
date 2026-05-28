@@ -13,6 +13,11 @@ function renderSearch(params: WineSearchParams = {}) {
   );
 }
 
+async function openAdvanced() {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: /advanced filters/i }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -22,7 +27,7 @@ describe('WineSearch', () => {
 
   it('renders the search input', () => {
     renderSearch();
-    expect(screen.getByPlaceholderText(/search wines/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/search name, producer/i)).toBeInTheDocument();
   });
 
   it('renders all seven wine type chips', () => {
@@ -33,18 +38,33 @@ describe('WineSearch', () => {
     });
   });
 
+  it('renders drink status filter chips', () => {
+    renderSearch();
+    expect(screen.getByRole('button', { name: 'Past Peak' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Too Young' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'In Window' })).toBeInTheDocument();
+  });
+
+  it('renders Advanced Filters toggle button', () => {
+    renderSearch();
+    expect(screen.getByRole('button', { name: /advanced filters/i })).toBeInTheDocument();
+  });
+
   it('reflects query param value in search input', () => {
     renderSearch({ query: 'Bordeaux' });
     expect(screen.getByDisplayValue('Bordeaux')).toBeInTheDocument();
   });
 
-  it('reflects vintage_year param in year input', () => {
+  it('reflects vintage_year param in year input after opening advanced panel', async () => {
     renderSearch({ vintage_year: 2019 });
+    await openAdvanced();
     expect(screen.getByDisplayValue('2019')).toBeInTheDocument();
   });
 
-  it('reflects country param in country input', () => {
+  it('reflects country param in country input after opening advanced panel', async () => {
     renderSearch({ country: 'France' });
+    await openAdvanced();
+    // SearchSuggest renders an input; find it by its displayed value
     expect(screen.getByDisplayValue('France')).toBeInTheDocument();
   });
 
@@ -52,9 +72,7 @@ describe('WineSearch', () => {
 
   it('typing in search calls onChange with "query" key', () => {
     renderSearch();
-    // WineSearch is fully controlled (value=params.query), so use fireEvent to
-    // simulate a single change event with the complete input value.
-    fireEvent.change(screen.getByPlaceholderText(/search wines/i), {
+    fireEvent.change(screen.getByPlaceholderText(/search name, producer/i), {
       target: { value: 'Chardonnay' },
     });
     expect(mockOnChange).toHaveBeenCalledWith('query', 'Chardonnay');
@@ -62,7 +80,7 @@ describe('WineSearch', () => {
 
   it('clearing the search input calls onChange with undefined', () => {
     renderSearch({ query: 'Test' });
-    fireEvent.change(screen.getByPlaceholderText(/search wines/i), {
+    fireEvent.change(screen.getByPlaceholderText(/search name, producer/i), {
       target: { value: '' },
     });
     expect(mockOnChange).toHaveBeenCalledWith('query', undefined);
@@ -98,6 +116,22 @@ describe('WineSearch', () => {
     expect(mockOnChange).toHaveBeenCalledWith('wine_type', 'white');
   });
 
+  // ─── Drink status chip interaction ────────────────────────────────────────
+
+  it('clicking Past Peak chip calls onChange with drink_status', async () => {
+    const user = userEvent.setup();
+    renderSearch();
+    await user.click(screen.getByRole('button', { name: 'Past Peak' }));
+    expect(mockOnChange).toHaveBeenCalledWith('drink_status', 'past_peak');
+  });
+
+  it('clicking active drink_status chip toggles it off', async () => {
+    const user = userEvent.setup();
+    renderSearch({ drink_status: 'past_peak' });
+    await user.click(screen.getByRole('button', { name: 'Past Peak' }));
+    expect(mockOnChange).toHaveBeenCalledWith('drink_status', undefined);
+  });
+
   // ─── Clear button ─────────────────────────────────────────────────────────
 
   it('clear button is not shown when no filters are active', () => {
@@ -129,23 +163,63 @@ describe('WineSearch', () => {
     expect(mockOnChange).not.toHaveBeenCalled();
   });
 
-  // ─── Additional filter inputs ─────────────────────────────────────────────
+  // ─── Advanced filter inputs (panel must be opened first) ─────────────────
 
-  it('typing in country input calls onChange with "country"', () => {
+  it('advanced panel is hidden by default', () => {
     renderSearch();
+    expect(screen.queryByPlaceholderText('Country')).not.toBeInTheDocument();
+  });
+
+  it('advanced panel opens on toggle click', async () => {
+    renderSearch();
+    await openAdvanced();
+    expect(screen.getByPlaceholderText('Country')).toBeInTheDocument();
+  });
+
+  it('typing in country input calls onChange with "country"', async () => {
+    renderSearch();
+    await openAdvanced();
     fireEvent.change(screen.getByPlaceholderText('Country'), { target: { value: 'Italy' } });
     expect(mockOnChange).toHaveBeenCalledWith('country', 'Italy');
   });
 
-  it('typing in region input calls onChange with "region"', () => {
+  it('typing in region input calls onChange with "region"', async () => {
     renderSearch();
-    fireEvent.change(screen.getByPlaceholderText('Region'), { target: { value: 'Tuscany' } });
+    await openAdvanced();
+    fireEvent.change(screen.getByPlaceholderText(/or type exact region/i), { target: { value: 'Tuscany' } });
     expect(mockOnChange).toHaveBeenCalledWith('region', 'Tuscany');
   });
 
-  it('typing in vintage year input calls onChange with numeric value', () => {
+  it('typing in vintage year input calls onChange with numeric value', async () => {
     renderSearch();
-    fireEvent.change(screen.getByPlaceholderText('Vintage year'), { target: { value: '2020' } });
+    await openAdvanced();
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. 2019/), { target: { value: '2020' } });
     expect(mockOnChange).toHaveBeenCalledWith('vintage_year', 2020);
+  });
+
+  it('price_min input calls onChange with price_min', async () => {
+    renderSearch();
+    await openAdvanced();
+    fireEvent.change(screen.getByPlaceholderText('Min'), { target: { value: '20' } });
+    expect(mockOnChange).toHaveBeenCalledWith('price_min', 20);
+  });
+
+  it('price_max input calls onChange with price_max', async () => {
+    renderSearch();
+    await openAdvanced();
+    fireEvent.change(screen.getByPlaceholderText('Max'), { target: { value: '100' } });
+    expect(mockOnChange).toHaveBeenCalledWith('price_max', 100);
+  });
+
+  it('variety input calls onChange with variety', async () => {
+    renderSearch();
+    await openAdvanced();
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. cab/i), { target: { value: 'Cab' } });
+    expect(mockOnChange).toHaveBeenCalledWith('variety', 'Cab');
+  });
+
+  it('shows "active" badge on Advanced Filters toggle when advanced params are set', () => {
+    renderSearch({ price_min: 10 });
+    expect(screen.getByText('active')).toBeInTheDocument();
   });
 });

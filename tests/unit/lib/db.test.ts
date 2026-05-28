@@ -1619,3 +1619,193 @@ describe('getWineFacets', () => {
     expect(result.length).toBeLessThanOrEqual(20);
   });
 });
+
+// ─── Advanced search: price range ─────────────────────────────────────────────
+describe('Advanced search: price range', () => {
+  beforeEach(async () => {
+    await sqliteAdapter.createWine({ name: 'Cheap Red', average_price: 12, wine_type: 'red' });
+    await sqliteAdapter.createWine({ name: 'Mid Red', average_price: 45, wine_type: 'red' });
+    await sqliteAdapter.createWine({ name: 'Expensive Red', average_price: 150, wine_type: 'red' });
+    await sqliteAdapter.createWine({ name: 'No Price Red' }); // null price
+  });
+
+  it('filters by price_min', async () => {
+    const results = await sqliteAdapter.getWines({ price_min: 40 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Mid Red');
+    expect(names).toContain('Expensive Red');
+    expect(names).not.toContain('Cheap Red');
+  });
+
+  it('filters by price_max', async () => {
+    const results = await sqliteAdapter.getWines({ price_max: 50 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Cheap Red');
+    expect(names).toContain('Mid Red');
+    expect(names).not.toContain('Expensive Red');
+  });
+
+  it('filters by price range (min and max)', async () => {
+    const results = await sqliteAdapter.getWines({ price_min: 20, price_max: 100 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Mid Red');
+    expect(names).not.toContain('Cheap Red');
+    expect(names).not.toContain('Expensive Red');
+  });
+
+  it('null-price wines are excluded from price range filter', async () => {
+    const results = await sqliteAdapter.getWines({ price_min: 0, price_max: 200 });
+    const names = results.map(w => w.name);
+    expect(names).not.toContain('No Price Red');
+  });
+
+  it('price range combines with wine_type filter', async () => {
+    await sqliteAdapter.createWine({ name: 'Cheap White', average_price: 10, wine_type: 'white' });
+    const results = await sqliteAdapter.getWines({ price_max: 20, wine_type: 'red' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Cheap Red');
+    expect(names).not.toContain('Cheap White');
+  });
+});
+
+// ─── Advanced search: fuzzy variety ───────────────────────────────────────────
+describe('Advanced search: fuzzy variety (LIKE)', () => {
+  beforeEach(async () => {
+    await sqliteAdapter.createWine({ name: 'Cab Sauv', variety: 'Cabernet Sauvignon' });
+    await sqliteAdapter.createWine({ name: 'Cab Franc', variety: 'Cabernet Franc' });
+    await sqliteAdapter.createWine({ name: 'Merlot Wine', variety: 'Merlot' });
+    await sqliteAdapter.createWine({ name: 'Cab Blend', variety: 'Cab Blend' });
+  });
+
+  it('"cab" matches all Cabernet and Cab varieties', async () => {
+    const results = await sqliteAdapter.getWines({ variety: 'cab' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Cab Sauv');
+    expect(names).toContain('Cab Franc');
+    expect(names).toContain('Cab Blend');
+    expect(names).not.toContain('Merlot Wine');
+  });
+
+  it('exact variety still works via LIKE', async () => {
+    const results = await sqliteAdapter.getWines({ variety: 'Merlot' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Merlot Wine');
+    expect(names).not.toContain('Cab Sauv');
+  });
+
+  it('case-insensitive variety matching', async () => {
+    const results = await sqliteAdapter.getWines({ variety: 'CABERNET' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Cab Sauv');
+    expect(names).toContain('Cab Franc');
+  });
+});
+
+// ─── Advanced search: multi-region ────────────────────────────────────────────
+describe('Advanced search: multi-region filter', () => {
+  beforeEach(async () => {
+    await sqliteAdapter.createWine({ name: 'Napa Cab', region: 'Napa Valley' });
+    await sqliteAdapter.createWine({ name: 'Bordeaux Blend', region: 'Bordeaux' });
+    await sqliteAdapter.createWine({ name: 'Tuscany Red', region: 'Tuscany' });
+    await sqliteAdapter.createWine({ name: 'Napa App', appellation: 'Napa Valley' });
+  });
+
+  it('single region matches', async () => {
+    const results = await sqliteAdapter.getWines({ regions: 'Napa Valley' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Napa Cab');
+    expect(names).not.toContain('Bordeaux Blend');
+  });
+
+  it('multi-region matches any of the listed regions', async () => {
+    const results = await sqliteAdapter.getWines({ regions: 'Napa Valley,Bordeaux' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Napa Cab');
+    expect(names).toContain('Bordeaux Blend');
+    expect(names).not.toContain('Tuscany Red');
+  });
+
+  it('regions filter also matches appellation field', async () => {
+    const results = await sqliteAdapter.getWines({ regions: 'Napa Valley' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Napa App');
+  });
+});
+
+// ─── Producers ────────────────────────────────────────────────────────────────
+describe('Producers: getProducers and getProducerWines', () => {
+  let profile: import('@/types').Profile;
+
+  beforeEach(async () => {
+    profile = await sqliteAdapter.createProfile({ name: 'Producer Test Cellar', user_id: 'user-prod' });
+  });
+
+  it('getProducers returns producers ordered by transaction count', async () => {
+    const w1 = await sqliteAdapter.createWine({ name: 'Ridge Cab', producer: 'Ridge Vineyards', wine_type: 'red' });
+    const w2 = await sqliteAdapter.createWine({ name: 'Opus One', producer: 'Opus One Winery', wine_type: 'red' });
+
+    // 3 transactions for Ridge, 1 for Opus One
+    for (let i = 0; i < 3; i++) {
+      await sqliteAdapter.addBottle({ wine_id: w1.id, profile_id: profile.id, location: 'Shelf' }, 'user-prod');
+    }
+    await sqliteAdapter.addBottle({ wine_id: w2.id, profile_id: profile.id, location: 'Shelf' }, 'user-prod');
+
+    const producers = await sqliteAdapter.getProducers();
+    const ridgeIdx = producers.findIndex(p => p.producer === 'Ridge Vineyards');
+    const opusIdx = producers.findIndex(p => p.producer === 'Opus One Winery');
+    expect(ridgeIdx).toBeLessThan(opusIdx);
+    expect(producers[ridgeIdx].transaction_count).toBe(3);
+    expect(producers[opusIdx].transaction_count).toBe(1);
+  });
+
+  it('getProducers includes wine_count and bottle_count', async () => {
+    const w = await sqliteAdapter.createWine({ name: 'Test Wine', producer: 'Test Producer', wine_type: 'white' });
+    await sqliteAdapter.addBottle({ wine_id: w.id, profile_id: profile.id, location: '', quantity: 5 }, 'user-prod');
+
+    const producers = await sqliteAdapter.getProducers();
+    const tp = producers.find(p => p.producer === 'Test Producer');
+    expect(tp).toBeTruthy();
+    expect(tp!.wine_count).toBe(1);
+    expect(tp!.bottle_count).toBe(5);
+  });
+
+  it('getProducers excludes wines with null or empty producer', async () => {
+    await sqliteAdapter.createWine({ name: 'Anonymous Wine' }); // no producer
+    const producers = await sqliteAdapter.getProducers();
+    const anon = producers.find(p => !p.producer);
+    expect(anon).toBeUndefined();
+  });
+
+  it('getProducerWines returns wines for a producer', async () => {
+    const w1 = await sqliteAdapter.createWine({ name: 'Domaine Red', producer: 'Domaine Test', wine_type: 'red' });
+    const w2 = await sqliteAdapter.createWine({ name: 'Domaine White', producer: 'Domaine Test', wine_type: 'white' });
+    await sqliteAdapter.createWine({ name: 'Other Wine', producer: 'Other Producer' });
+
+    const wines = await sqliteAdapter.getProducerWines('Domaine Test');
+    const names = wines.map(w => w.name);
+    expect(names).toContain('Domaine Red');
+    expect(names).toContain('Domaine White');
+    expect(names).not.toContain('Other Wine');
+    expect(wines).toHaveLength(2);
+
+    // Should have transaction_count and bottle_count fields
+    expect(wines[0]).toHaveProperty('transaction_count');
+    expect(wines[0]).toHaveProperty('bottle_count');
+
+    // Add bottles to w1 (2 transactions) and w2 (1 transaction)
+    await sqliteAdapter.addBottle({ wine_id: w1.id, profile_id: profile.id, location: '' }, 'user-prod');
+    await sqliteAdapter.addBottle({ wine_id: w1.id, profile_id: profile.id, location: '' }, 'user-prod');
+    await sqliteAdapter.addBottle({ wine_id: w2.id, profile_id: profile.id, location: '' }, 'user-prod');
+
+    const winesAfter = await sqliteAdapter.getProducerWines('Domaine Test');
+    // w1 has more transactions — should come first
+    expect(winesAfter[0].id).toBe(w1.id);
+    expect(winesAfter[0].transaction_count).toBe(2);
+    expect(winesAfter[1].transaction_count).toBe(1);
+  });
+
+  it('getProducerWines returns empty array for unknown producer', async () => {
+    const wines = await sqliteAdapter.getProducerWines('NonExistentProducer12345');
+    expect(wines).toEqual([]);
+  });
+});
