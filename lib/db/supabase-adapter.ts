@@ -5,6 +5,7 @@ import type {
   CellarInventory,
   BottleTransaction,
   Location,
+  WineNote,
   WineSearchParams,
   AddBottleInput,
   RemoveBottleInput,
@@ -330,6 +331,31 @@ export const supabaseAdapter: DbAdapter = {
       if (val && !seen.has(val)) { seen.add(val); results.push(val); }
     }
     return results;
+  },
+
+  // --- Tasting Notes ---
+
+  async getWineNotes(wineId: string): Promise<WineNote[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('wine_notes')
+      .select('*')
+      .eq('wine_id', wineId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as WineNote[];
+  },
+
+  async addWineNote(wineId: string, note: string, tastedAt?: string): Promise<WineNote> {
+    const now = new Date().toISOString();
+    const entry = { id: generateId(), wine_id: wineId, note, tasted_at: tastedAt ?? null, created_at: now };
+    const { data, error } = await getSupabaseAdmin().from('wine_notes').insert(entry).select().single();
+    if (error) throw error;
+    return data as WineNote;
+  },
+
+  async deleteWineNote(noteId: string): Promise<void> {
+    const { error } = await getSupabaseAdmin().from('wine_notes').delete().eq('id', noteId);
+    if (error) throw error;
   },
 
   // --- Transactions ---

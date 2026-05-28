@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS locations (
   UNIQUE(profile_id, name)
 );
 
+-- Timestamped tasting notes per wine.
+CREATE TABLE IF NOT EXISTS wine_notes (
+  id TEXT PRIMARY KEY,
+  wine_id TEXT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+  note TEXT NOT NULL,
+  tasted_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wine_notes_wine_id ON wine_notes(wine_id);
 CREATE INDEX IF NOT EXISTS idx_wines_barcode ON wines(barcode);
 CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(name);
 CREATE INDEX IF NOT EXISTS idx_cellar_wine_id ON cellar_inventory(wine_id);

@@ -102,6 +102,14 @@ export interface WineSearchParams {
   drink_status?: DrinkStatusFilter;
 }
 
+export interface WineNote {
+  id: string;
+  wine_id: string;
+  note: string;
+  tasted_at?: string;
+  created_at: string;
+}
+
 export interface AddBottleInput {
   wine_id: string;
   profile_id: string;
@@ -183,4 +191,9 @@ export interface DbAdapter {
 
   // Transactions
   getTransactions(profileId: string, userId: string, limit?: number): Promise<BottleTransaction[]>;
+
+  // Tasting notes
+  getWineNotes(wineId: string): Promise<WineNote[]>;
+  addWineNote(wineId: string, note: string, tastedAt?: string): Promise<WineNote>;
+  deleteWineNote(noteId: string): Promise<void>;
 }

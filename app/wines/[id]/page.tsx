@@ -3,12 +3,12 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Edit, Trash2, MapPin, Calendar, DollarSign, Percent, GlassWater } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
-import type { Wine, CellarInventory, BottleTransaction } from '@/types';
+import type { Wine, CellarInventory, BottleTransaction, WineNote } from '@/types';
 import BottleManager from '@/components/BottleManager';
 import TransactionLog from '@/components/TransactionLog';
-import { cn, wineTypeLabel, wineTypeColor, formatPrice } from '@/lib/utils';
+import { cn, wineTypeLabel, wineTypeColor, formatPrice, formatDate } from '@/lib/utils';
 
 export default function WineDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -17,8 +17,12 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
   const [inventory, setInventory] = useState<CellarInventory[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'inventory' | 'transactions'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'transactions' | 'notes'>('inventory');
   const [transactions, setTransactions] = useState<BottleTransaction[]>([]);
+  const [notes, setNotes] = useState<WineNote[]>([]);
+  const [noteText, setNoteText] = useState('');
+  const [noteTastedAt, setNoteTastedAt] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
 
   const loadInventory = async () => {
     if (!profiles.length) return;
@@ -52,7 +56,7 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
       try {
         const res = await fetch(`/api/wines/${id}`);
         if (res.ok) setWine(await res.json());
-        await Promise.all([loadInventory(), loadTransactions()]);
+        await Promise.all([loadInventory(), loadTransactions(), loadNotes()]);
       } finally {
         setLoading(false);
       }
@@ -60,6 +64,36 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, profiles.length]);
+
+  const loadNotes = async () => {
+    const res = await fetch(`/api/wines/${id}/notes`);
+    if (res.ok) setNotes(await res.json());
+  };
+
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noteText.trim()) return;
+    setAddingNote(true);
+    try {
+      const res = await fetch(`/api/wines/${id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: noteText.trim(), tasted_at: noteTastedAt || undefined }),
+      });
+      if (res.ok) {
+        setNoteText('');
+        setNoteTastedAt('');
+        await loadNotes();
+      }
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    await fetch(`/api/wines/${id}/notes/${noteId}`, { method: 'DELETE' });
+    await loadNotes();
+  };
 
   const handleDelete = async () => {
     const res = await fetch(`/api/wines/${id}`, { method: 'DELETE' });
@@ -190,16 +224,17 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Tabs */}
       <div className="space-y-3">
-        <div className="flex gap-1 border-b">
-          {(['inventory', 'transactions'] as const).map((tab) => (
+        <div className="flex gap-1 border-b overflow-x-auto">
+          {(['inventory', 'notes', 'transactions'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={cn('px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors',
+              className={cn('px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors whitespace-nowrap flex items-center gap-1.5',
                 activeTab === tab ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              {tab}
+              {tab === 'notes' && <NotebookPen className="h-3.5 w-3.5" />}
+              {tab === 'notes' ? `Notes${notes.length > 0 ? ` (${notes.length})` : ''}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -212,6 +247,73 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             onRefresh={loadInventory}
             suggestedPrice={wine.average_price}
           />
+        )}
+
+        {activeTab === 'notes' && (
+          <div className="space-y-4">
+            {/* Add note form */}
+            <form onSubmit={handleAddNote} className="rounded-lg border bg-card p-4 space-y-3">
+              <p className="text-sm font-medium flex items-center gap-1.5">
+                <NotebookPen className="h-4 w-4 text-primary" />
+                Add Tasting Note
+              </p>
+              <textarea
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                placeholder="Describe aromas, palate, finish, food pairings…"
+                rows={3}
+                className="w-full px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              />
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">Tasted on (optional)</label>
+                  <input
+                    type="date"
+                    value={noteTastedAt}
+                    onChange={e => setNoteTastedAt(e.target.value)}
+                    className="mt-1 w-full px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!noteText.trim() || addingNote}
+                  className="flex items-center gap-1.5 px-4 py-2 mt-5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {addingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Save Note
+                </button>
+              </div>
+            </form>
+
+            {/* Notes list */}
+            {notes.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                No tasting notes yet. Add your first note above.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notes.map(n => (
+                  <div key={n.id} className="rounded-lg border bg-card px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        {n.tasted_at
+                          ? `Tasted ${formatDate(n.tasted_at)}`
+                          : `Added ${formatDate(n.created_at)}`}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteNote(n.id)}
+                        className="p-1 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                        title="Delete note"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{n.note}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'transactions' && (

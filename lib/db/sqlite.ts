@@ -8,6 +8,7 @@ import type {
   Location,
   CellarInventory,
   BottleTransaction,
+  WineNote,
   WineSearchParams,
   AddBottleInput,
   RemoveBottleInput,
@@ -442,6 +443,34 @@ export const sqliteAdapter: DbAdapter = {
       LIMIT 20
     `).all(`%${q}%`) as Record<string, string>[];
     return rows.map(r => r[field]);
+  },
+
+  // --- Tasting Notes ---
+
+  async getWineNotes(wineId: string): Promise<WineNote[]> {
+    return getDb().prepare(
+      'SELECT * FROM wine_notes WHERE wine_id = ? ORDER BY created_at DESC'
+    ).all(wineId) as WineNote[];
+  },
+
+  async addWineNote(wineId: string, note: string, tastedAt?: string): Promise<WineNote> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const entry: WineNote = {
+      id: generateId(),
+      wine_id: wineId,
+      note,
+      tasted_at: tastedAt ?? undefined,
+      created_at: now,
+    };
+    d.prepare(
+      'INSERT INTO wine_notes (id, wine_id, note, tasted_at, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).run(entry.id, entry.wine_id, entry.note, entry.tasted_at ?? null, entry.created_at);
+    return entry;
+  },
+
+  async deleteWineNote(noteId: string): Promise<void> {
+    getDb().prepare('DELETE FROM wine_notes WHERE id = ?').run(noteId);
   },
 
   // --- Transactions ---
