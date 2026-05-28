@@ -779,6 +779,97 @@ describe('Cellar inventory', () => {
   });
 });
 
+// ─── Wine data persistence ────────────────────────────────────────────────────
+
+describe('Wine data persistence after inventory removal', () => {
+  const userId = 'persist-test-user';
+
+  it('wine record survives removing all bottles', async () => {
+    const wine = await sqliteAdapter.createWine({ name: 'Persist Wine', vintage_year: 2020 });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Persist Cellar' });
+    const item = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack A', quantity: 3 }, userId);
+
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: item.id, quantity: 3 }, userId);
+
+    // Inventory should be gone (quantity = 0 filtered out)
+    const inv = await sqliteAdapter.getCellarInventory(profile.id, userId);
+    expect(inv.find(i => i.wine_id === wine.id)).toBeUndefined();
+
+    // Wine record must still exist
+    const fetched = await sqliteAdapter.getWineById(wine.id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.name).toBe('Persist Wine');
+    expect(fetched!.vintage_year).toBe(2020);
+  });
+
+  it('wine record survives removing all bottles across multiple locations', async () => {
+    const wine = await sqliteAdapter.createWine({ name: 'Multi-loc Persist Wine' });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'ML Persist Cellar' });
+    const item1 = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack A', quantity: 2 }, userId);
+    const item2 = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack B', quantity: 1 }, userId);
+
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: item1.id, quantity: 2 }, userId);
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: item2.id, quantity: 1 }, userId);
+
+    const inv = await sqliteAdapter.getCellarInventory(profile.id, userId);
+    expect(inv.filter(i => i.wine_id === wine.id).length).toBe(0);
+
+    const fetched = await sqliteAdapter.getWineById(wine.id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.name).toBe('Multi-loc Persist Wine');
+  });
+
+  it('wine persists across all profiles after bottles removed from all', async () => {
+    const wine = await sqliteAdapter.createWine({ name: 'All Profile Persist Wine' });
+    const p1 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Persist P1' });
+    const p2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Persist P2' });
+
+    const i1 = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: p1.id, location: 'Rack', quantity: 1 }, userId);
+    const i2 = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: p2.id, location: 'Rack', quantity: 1 }, userId);
+
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: i1.id, quantity: 1 }, userId);
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: i2.id, quantity: 1 }, userId);
+
+    expect(await sqliteAdapter.getWineById(wine.id)).not.toBeNull();
+  });
+
+  it('wine metadata (notes, description, drink window) survives inventory removal', async () => {
+    const wine = await sqliteAdapter.createWine({
+      name: 'Metadata Persist Wine',
+      description: 'A great wine',
+      drink_from_year: 2025,
+      drink_by_year: 2035,
+      average_price: 150,
+    });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Meta Persist Cellar' });
+    const item = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack', quantity: 1 }, userId);
+
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: item.id, quantity: 1 }, userId);
+
+    const fetched = await sqliteAdapter.getWineById(wine.id);
+    expect(fetched!.description).toBe('A great wine');
+    expect(fetched!.drink_from_year).toBe(2025);
+    expect(fetched!.drink_by_year).toBe(2035);
+    expect(fetched!.average_price).toBe(150);
+  });
+
+  it('getWines still returns wine after all inventory removed', async () => {
+    const wine = await sqliteAdapter.createWine({ name: 'Catalog Persist Wine', wine_type: 'red' });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Cat Persist Cellar' });
+    const item = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack', quantity: 1 }, userId);
+
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: item.id, quantity: 1 }, userId);
+
+    // Wine should appear in catalog search (no profile filter)
+    const wines = await sqliteAdapter.getWines({});
+    expect(wines.find(w => w.id === wine.id)).toBeDefined();
+
+    // Wine should NOT appear when filtered by profile (no inventory)
+    const filtered = await sqliteAdapter.getWines({ profile_ids: profile.id });
+    expect(filtered.find(w => w.id === wine.id)).toBeUndefined();
+  });
+});
+
 // ─── Drink window fields ──────────────────────────────────────────────────────
 
 describe('Drink window fields', () => {
