@@ -36,6 +36,28 @@ export function wineTypeLabel(type: string | undefined): string {
   return type ? (labels[type] ?? type) : 'Unknown';
 }
 
+export type DrinkStatus = 'past_peak' | 'too_young' | 'in_window' | null;
+
+export function drinkWindowStatus(
+  drinkFromYear: number | undefined | null,
+  drinkByYear: number | undefined | null,
+  currentYear = new Date().getFullYear(),
+): DrinkStatus {
+  if (!drinkFromYear && !drinkByYear) return null;
+  if (drinkByYear && currentYear > drinkByYear) return 'past_peak';
+  if (drinkFromYear && currentYear < drinkFromYear) return 'too_young';
+  if (drinkFromYear || drinkByYear) return 'in_window';
+  return null;
+}
+
+export function drinkWindowBadge(status: DrinkStatus): { label: string; cls: string } | null {
+  if (!status) return null;
+  if (status === 'past_peak') return { label: 'Past Peak', cls: 'bg-red-100 text-red-700' };
+  if (status === 'too_young') return { label: 'Too Young', cls: 'bg-blue-100 text-blue-700' };
+  if (status === 'in_window') return { label: 'In Window', cls: 'bg-green-100 text-green-700' };
+  return null;
+}
+
 export function wineTypeColor(type: string | undefined): string {
   const colors: Record<string, string> = {
     red: 'bg-red-100 text-red-800',

@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Plus, Minus, Loader2, MapPin, ArrowRightLeft } from 'lucide-react';
 import type { CellarInventory, Profile } from '@/types';
+import LocationPicker from '@/components/LocationPicker';
 import { formatPrice, formatDate, cn } from '@/lib/utils';
 
 interface Props {
@@ -10,6 +12,7 @@ interface Props {
   profiles: Profile[];
   inventory: CellarInventory[];
   onRefresh: () => void;
+  suggestedPrice?: number;
 }
 
 interface AddForm {
@@ -25,13 +28,13 @@ interface MoveForm {
   quantity: number;
 }
 
-export default function BottleManager({ wineId, profiles, inventory, onRefresh }: Props) {
+export default function BottleManager({ wineId, profiles, inventory, onRefresh, suggestedPrice }: Props) {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState<AddForm>({
     profile_id: profiles[0]?.id ?? '',
     location: '',
     quantity: 1,
-    purchase_price: '',
+    purchase_price: suggestedPrice != null ? String(suggestedPrice) : '',
     purchase_date: '',
   });
   const [addLoading, setAddLoading] = useState(false);
@@ -41,11 +44,8 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
   const [moveLoading, setMoveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const allLocations = [...new Set(inventory.map((i) => i.location))];
-
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.location.trim()) { setError('Location is required'); return; }
     if (!addForm.profile_id) { setError('Profile is required'); return; }
 
     setError(null);
@@ -65,7 +65,13 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
       });
       if (!res.ok) throw new Error(await res.text());
       setShowAdd(false);
-      setAddForm({ profile_id: profiles[0]?.id ?? '', location: '', quantity: 1, purchase_price: '', purchase_date: '' });
+      setAddForm({
+        profile_id: profiles[0]?.id ?? '',
+        location: '',
+        quantity: 1,
+        purchase_price: suggestedPrice != null ? String(suggestedPrice) : '',
+        purchase_date: '',
+      });
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add bottles');
@@ -104,7 +110,6 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
   };
 
   const handleMove = async (item: CellarInventory) => {
-    if (!moveForm.new_location.trim()) { setError('New location is required'); return; }
     setError(null);
     setMoveLoading(true);
     try {
@@ -127,15 +132,9 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
   };
 
   const inputCls = 'w-full px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring';
-  const locationsListId = `locations-${wineId}`;
 
   return (
     <div className="space-y-4">
-      {/* Datalist of all known locations for autocomplete */}
-      <datalist id={locationsListId}>
-        {allLocations.map((loc) => <option key={loc} value={loc} />)}
-      </datalist>
-
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-sm">Cellar Inventory</h3>
         <button
@@ -162,7 +161,7 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
               <select
                 className={inputCls}
                 value={addForm.profile_id}
-                onChange={(e) => setAddForm((p) => ({ ...p, profile_id: e.target.value }))}
+                onChange={(e) => setAddForm((p) => ({ ...p, profile_id: e.target.value, location: '' }))}
                 required
               >
                 {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -180,18 +179,27 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs text-muted-foreground mb-1 block">Location in Cellar *</label>
-              <input
-                className={inputCls}
-                value={addForm.location}
-                onChange={(e) => setAddForm((p) => ({ ...p, location: e.target.value }))}
-                placeholder="e.g. Rack A, Row 2, Slot 3"
-                list={locationsListId}
-                required
-              />
+              <label className="text-xs text-muted-foreground mb-1 block">Location in Cellar</label>
+              {addForm.profile_id ? (
+                <LocationPicker
+                  key={addForm.profile_id}
+                  profileId={addForm.profile_id}
+                  value={addForm.location}
+                  onChange={(v) => setAddForm((p) => ({ ...p, location: v }))}
+                  placeholder="Search or select a location…"
+                  allowUnlocated
+                />
+              ) : (
+                <input className={inputCls} disabled placeholder="Select a profile first" />
+              )}
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Purchase Price ($)</label>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Purchase Price ($)
+                {suggestedPrice != null && (
+                  <span className="ml-1 text-muted-foreground/70">(suggested: {formatPrice(suggestedPrice)})</span>
+                )}
+              </label>
               <input
                 type="number"
                 className={inputCls}
@@ -245,7 +253,16 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{item.location}</span>
+                      {item.location ? (
+                        <Link
+                          href={`/profiles/${item.profile_id}/location?name=${encodeURIComponent(item.location)}`}
+                          className="truncate hover:underline text-primary"
+                        >
+                          {item.location}
+                        </Link>
+                      ) : (
+                        <span className="italic text-amber-600">Unlocated</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       {profile && <span className="font-medium text-foreground">{profile.name}</span>}
@@ -285,14 +302,13 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
                     <p className="text-xs font-medium text-amber-800">Move bottles to a new location</p>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div className="sm:col-span-2">
-                        <label className="text-xs text-muted-foreground mb-1 block">New location *</label>
-                        <input
-                          className={inputCls}
+                        <label className="text-xs text-muted-foreground mb-1 block">New location</label>
+                        <LocationPicker
+                          profileId={item.profile_id}
                           value={moveForm.new_location}
-                          onChange={(e) => setMoveForm((f) => ({ ...f, new_location: e.target.value }))}
-                          placeholder="e.g. Fridge, Shelf 2"
-                          list={locationsListId}
-                          autoFocus
+                          onChange={(v) => setMoveForm((f) => ({ ...f, new_location: v }))}
+                          placeholder="Search or select a location…"
+                          allowUnlocated={false}
                         />
                       </div>
                       <div>
@@ -311,7 +327,7 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh }
                       <button
                         type="button"
                         onClick={() => handleMove(item)}
-                        disabled={moveLoading}
+                        disabled={moveLoading || !moveForm.new_location}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-600 text-white text-sm hover:bg-amber-700 disabled:opacity-50 transition-colors"
                       >
                         {moveLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

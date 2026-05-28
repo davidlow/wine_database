@@ -9,7 +9,7 @@ import {
 import type { CellarInventory, Location, Profile, BottleTransaction } from '@/types';
 import { useProfile } from '@/hooks/useProfile';
 import TransactionLog from '@/components/TransactionLog';
-import { cn } from '@/lib/utils';
+import { cn, drinkWindowStatus } from '@/lib/utils';
 
 // Virtual locations are derived from inventory but have no locations-table record.
 type DisplayLocation = Location & { virtual?: true };
@@ -461,6 +461,14 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
   const unlocatedItems = inventory.filter(i => i.location === '');
   const unlocatedBottles = unlocatedItems.reduce((s, i) => s + i.quantity, 0);
 
+  // Drink window summary across all inventory
+  const yr = new Date().getFullYear();
+  const pastPeakItems = inventory.filter(i => drinkWindowStatus(i.wine?.drink_from_year, i.wine?.drink_by_year) === 'past_peak');
+  const tooYoungItems = inventory.filter(i => drinkWindowStatus(i.wine?.drink_from_year, i.wine?.drink_by_year) === 'too_young');
+  const pastPeakBottles = pastPeakItems.reduce((s, i) => s + i.quantity, 0);
+  const tooYoungBottles = tooYoungItems.reduce((s, i) => s + i.quantity, 0);
+  void yr;
+
   const groupByWine = (items: CellarInventory[]) =>
     items.reduce<Record<string, CellarInventory[]>>((acc, item) => {
       acc[item.wine_id] = [...(acc[item.wine_id] ?? []), item];
@@ -792,6 +800,28 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                   <Wrench className="h-3.5 w-3.5" />
                   Fix Missing ({virtualLocations.length})
                 </button>
+              </div>
+            )}
+
+            {/* Drink window alerts */}
+            {(pastPeakBottles > 0 || tooYoungBottles > 0) && (
+              <div className="flex gap-2 flex-wrap">
+                {pastPeakBottles > 0 && (
+                  <div className="flex-1 min-w-[130px] rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-xs font-semibold text-red-700">Past Peak</p>
+                    <p className="text-lg font-bold text-red-800">{pastPeakBottles}</p>
+                    <p className="text-xs text-red-600">bottle{pastPeakBottles !== 1 ? 's' : ''} past ideal window</p>
+                    <p className="text-xs text-red-500 mt-0.5">{new Set(pastPeakItems.map(i => i.wine_id)).size} wines</p>
+                  </div>
+                )}
+                {tooYoungBottles > 0 && (
+                  <div className="flex-1 min-w-[130px] rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-xs font-semibold text-blue-700">Too Young</p>
+                    <p className="text-lg font-bold text-blue-800">{tooYoungBottles}</p>
+                    <p className="text-xs text-blue-600">bottle{tooYoungBottles !== 1 ? 's' : ''} not ready yet</p>
+                    <p className="text-xs text-blue-500 mt-0.5">{new Set(tooYoungItems.map(i => i.wine_id)).size} wines</p>
+                  </div>
+                )}
               </div>
             )}
 

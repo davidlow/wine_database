@@ -1,13 +1,35 @@
 'use client';
 
-import { Plus } from 'lucide-react';
+import { Suspense, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Plus, X } from 'lucide-react';
 import Link from 'next/link';
 import { useWineSearch } from '@/hooks/useWineSearch';
+import { useProfile } from '@/hooks/useProfile';
 import WineCard from '@/components/WineCard';
 import WineSearch from '@/components/WineSearch';
 
-export default function WinesPage() {
-  const { wines, loading, error, params, updateParam, clearParams } = useWineSearch();
+function WinesContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { profiles } = useProfile();
+
+  const profileIds = searchParams.get('profile_ids') ?? undefined;
+  const { wines, loading, error, params, updateParam, clearParams } = useWineSearch({ profile_ids: profileIds });
+
+  // Keep profile_ids in sync when it changes via URL
+  useEffect(() => {
+    updateParam('profile_ids', profileIds);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileIds]);
+
+  const activeProfileNames = profileIds
+    ? profileIds.split(',').map(id => profiles.find(p => p.id === id)?.name ?? id)
+    : [];
+
+  const clearProfileFilter = () => {
+    router.push('/wines');
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
@@ -21,6 +43,25 @@ export default function WinesPage() {
           Add Wine
         </Link>
       </div>
+
+      {/* Active cellar filter */}
+      {activeProfileNames.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground">Showing inventory from:</span>
+          {activeProfileNames.map(name => (
+            <span key={name} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
+              {name}
+            </span>
+          ))}
+          <button
+            onClick={clearProfileFilter}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3 w-3" />
+            Clear filter
+          </button>
+        </div>
+      )}
 
       <WineSearch params={params} onChange={updateParam} onClear={clearParams} />
 
@@ -38,10 +79,20 @@ export default function WinesPage() {
         </div>
       ) : wines.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          <p className="text-sm">No wines found.</p>
-          <Link href="/wines/new" className="text-primary text-sm underline mt-2 inline-block">
-            Add your first wine
-          </Link>
+          <p className="text-sm">
+            {activeProfileNames.length > 0
+              ? 'No wines found in the selected cellar(s).'
+              : 'No wines found.'}
+          </p>
+          {activeProfileNames.length > 0 ? (
+            <button onClick={clearProfileFilter} className="text-primary text-sm underline mt-2">
+              Browse full catalog
+            </button>
+          ) : (
+            <Link href="/wines/new" className="text-primary text-sm underline mt-2 inline-block">
+              Add your first wine
+            </Link>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -52,5 +103,13 @@ export default function WinesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function WinesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Loading…</div>}>
+      <WinesContent />
+    </Suspense>
   );
 }

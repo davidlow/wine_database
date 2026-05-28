@@ -2,7 +2,7 @@
 
 import { Search, X } from 'lucide-react';
 import { useCallback } from 'react';
-import type { WineSearchParams, WineType } from '@/types';
+import type { WineSearchParams, WineType, DrinkStatusFilter } from '@/types';
 import { cn } from '@/lib/utils';
 import SearchSuggest from '@/components/SearchSuggest';
 
@@ -12,6 +12,12 @@ const TYPE_LABELS: Record<WineType, string> = {
   red: 'Red', white: 'White', 'rosé': 'Rosé', sparkling: 'Sparkling',
   dessert: 'Dessert', fortified: 'Fortified', other: 'Other',
 };
+
+const DRINK_STATUS_OPTIONS: { value: DrinkStatusFilter; label: string; cls: string; activeClass: string }[] = [
+  { value: 'past_peak', label: 'Past Peak', cls: 'border-red-200 text-red-700 hover:bg-red-50', activeClass: 'bg-red-100 border-red-400 text-red-800' },
+  { value: 'too_young', label: 'Too Young', cls: 'border-blue-200 text-blue-700 hover:bg-blue-50', activeClass: 'bg-blue-100 border-blue-400 text-blue-800' },
+  { value: 'in_window', label: 'In Window', cls: 'border-green-200 text-green-700 hover:bg-green-50', activeClass: 'bg-green-100 border-green-400 text-green-800' },
+];
 
 interface Props {
   params: WineSearchParams;
@@ -27,6 +33,10 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
   const handleType = useCallback((type: WineType) => {
     onChange('wine_type', params.wine_type === type ? undefined : type);
   }, [params.wine_type, onChange]);
+
+  const handleDrinkStatus = useCallback((status: DrinkStatusFilter) => {
+    onChange('drink_status', params.drink_status === status ? undefined : status);
+  }, [params.drink_status, onChange]);
 
   return (
     <div className="space-y-3">
@@ -64,6 +74,22 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
             )}
           >
             {TYPE_LABELS[type]}
+          </button>
+        ))}
+      </div>
+
+      {/* Drink status filter chips */}
+      <div className="flex flex-wrap gap-2">
+        {DRINK_STATUS_OPTIONS.map(({ value, label, cls, activeClass }) => (
+          <button
+            key={value}
+            onClick={() => handleDrinkStatus(value)}
+            className={cn(
+              'text-xs px-3 py-1 rounded-full border transition-colors',
+              params.drink_status === value ? activeClass : cls
+            )}
+          >
+            {label}
           </button>
         ))}
       </div>

@@ -9,6 +9,7 @@ import WineForm from '@/components/WineForm';
 import type { WineLookupResult } from '@/lib/wine-lookup/types';
 import type { Wine } from '@/types';
 import Link from 'next/link';
+import { PackagePlus } from 'lucide-react';
 
 type ScanState =
   | 'idle'
@@ -109,17 +110,28 @@ export default function ScannerPage() {
 
   return (
     <div className="max-w-md mx-auto px-4 py-6 space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">
-          {scanState === 'scanning-label' ? 'Scan Label' :
-           scanState === 'confirming' ? 'Confirm Wine Details' :
-           'Barcode Scanner'}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {scanState === 'scanning-label' ? 'Point camera at the wine label, then tap Capture.' :
-           scanState === 'confirming' ? 'Review the AI-extracted details before saving.' :
-           'Scan a barcode to look up wine info automatically.'}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold">
+            {scanState === 'scanning-label' ? 'Scan Label' :
+             scanState === 'confirming' ? 'Confirm Wine Details' :
+             'Barcode Scanner'}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {scanState === 'scanning-label' ? 'Point camera at the wine label, then tap Capture.' :
+             scanState === 'confirming' ? 'Review the AI-extracted details before saving.' :
+             'Scan a barcode to look up wine info automatically.'}
+          </p>
+        </div>
+        {scanState === 'idle' && (
+          <Link
+            href="/scanner/bulk"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors shrink-0"
+          >
+            <PackagePlus className="h-3.5 w-3.5" />
+            Bulk Scan
+          </Link>
+        )}
       </div>
 
       {/* Barcode scanner */}

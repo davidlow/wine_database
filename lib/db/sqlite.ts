@@ -106,6 +106,22 @@ export const sqliteAdapter: DbAdapter = {
       values.push(...profileIds);
     }
 
+    if (params.drink_status) {
+      const yr = new Date().getFullYear();
+      if (params.drink_status === 'past_peak') {
+        conditions.push('(w.drink_by_year IS NOT NULL AND w.drink_by_year < ?)');
+        values.push(yr);
+      } else if (params.drink_status === 'too_young') {
+        conditions.push('(w.drink_from_year IS NOT NULL AND w.drink_from_year > ?)');
+        values.push(yr);
+      } else if (params.drink_status === 'in_window') {
+        conditions.push(
+          '((w.drink_from_year IS NULL OR w.drink_from_year <= ?) AND (w.drink_by_year IS NULL OR w.drink_by_year >= ?) AND (w.drink_from_year IS NOT NULL OR w.drink_by_year IS NOT NULL))'
+        );
+        values.push(yr, yr);
+      }
+    }
+
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const sql = `SELECT DISTINCT w.* FROM wines w ${where} ORDER BY w.name ASC`;
     return d.prepare(sql).all(...values) as Wine[];

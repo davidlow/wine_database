@@ -97,9 +97,15 @@ describe('lookupByBarcodeOpenFoodFacts', () => {
   });
 });
 
-describe('label scan stub', () => {
-  it('throws NotImplementedError', async () => {
-    const { scanLabel, NotImplementedError } = await import('@/lib/wine-lookup/label-scan');
-    await expect(scanLabel('base64data')).rejects.toThrow(NotImplementedError);
+describe('label scan', () => {
+  it('throws when GEMINI_API_KEY is missing', async () => {
+    const originalKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      const { scanLabel } = await import('@/lib/wine-lookup/label-scan');
+      await expect(scanLabel('base64data')).rejects.toThrow('GEMINI_API_KEY');
+    } finally {
+      if (originalKey !== undefined) process.env.GEMINI_API_KEY = originalKey;
+    }
   });
 });

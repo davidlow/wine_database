@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
-import type { WineSearchParams, WineType } from '@/types';
+import type { WineSearchParams, WineType, DrinkStatusFilter } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
       region: searchParams.get('region') ?? undefined,
       vintage_year: searchParams.get('vintage_year') ? Number(searchParams.get('vintage_year')) : undefined,
       producer: searchParams.get('producer') ?? undefined,
+      profile_ids: searchParams.get('profile_ids') ?? undefined,
+      drink_status: (searchParams.get('drink_status') as DrinkStatusFilter) ?? undefined,
     };
 
     const db = await getDb();

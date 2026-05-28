@@ -85,6 +85,8 @@ export interface BottleTransaction {
   wine?: Wine;
 }
 
+export type DrinkStatusFilter = 'past_peak' | 'too_young' | 'in_window';
+
 export interface WineSearchParams {
   query?: string;
   variety?: string;
@@ -96,6 +98,8 @@ export interface WineSearchParams {
   profile_id?: string;
   // Comma-separated profile IDs — filters to wines in those profiles' inventories
   profile_ids?: string;
+  // Drink window status filter
+  drink_status?: DrinkStatusFilter;
 }
 
 export interface AddBottleInput {
