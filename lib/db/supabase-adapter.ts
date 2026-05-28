@@ -34,12 +34,26 @@ export const supabaseAdapter: DbAdapter = {
         `name.ilike.%${params.query}%,producer.ilike.%${params.query}%,variety.ilike.%${params.query}%,region.ilike.%${params.query}%,country.ilike.%${params.query}%,barcode.ilike.%${params.query}%`
       );
     }
-    if (params.variety) query = query.eq('variety', params.variety);
+    // variety: partial match so "cab" finds Cabernet Sauvignon, Cab Franc, etc.
+    if (params.variety) query = query.ilike('variety', `%${params.variety}%`);
     if (params.wine_type) query = query.eq('wine_type', params.wine_type);
     if (params.country) query = query.eq('country', params.country);
     if (params.region) query = query.eq('region', params.region);
+    if (params.appellation) query = query.ilike('appellation', `%${params.appellation}%`);
     if (params.vintage_year) query = query.eq('vintage_year', params.vintage_year);
     if (params.producer) query = query.ilike('producer', `%${params.producer}%`);
+    if (params.price_min != null) query = query.gte('average_price', params.price_min);
+    if (params.price_max != null) query = query.lte('average_price', params.price_max);
+
+    // Multi-select regions
+    if (params.regions) {
+      const regionList = params.regions.split(',').map(s => s.trim()).filter(Boolean);
+      if (regionList.length > 0) {
+        const regionOr = regionList.map(r => `region.eq.${r}`).join(',');
+        const appellationOr = regionList.map(r => `appellation.eq.${r}`).join(',');
+        query = query.or(`${regionOr},${appellationOr}`);
+      }
+    }
 
     const { data, error } = await query.order('name');
     if (error) throw error;
@@ -369,5 +383,68 @@ export const supabaseAdapter: DbAdapter = {
       .limit(limit);
     if (error) throw error;
     return data as BottleTransaction[];
+  },
+
+  // --- Producers ---
+
+  async getProducers() {
+    // Supabase doesn't easily support cross-table aggregates via the JS client,
+    // so we do two queries and merge client-side.
+    const supabase = getSupabaseAdmin();
+    const { data: wines, error } = await supabase
+      .from('wines')
+      .select('id, producer')
+      .not('producer', 'is', null)
+      .neq('producer', '');
+    if (error) throw error;
+
+    const { data: txs } = await supabase.from('bottle_transactions').select('wine_id');
+    const { data: inv } = await supabase.from('cellar_inventory').select('wine_id, quantity').gt('quantity', 0);
+
+    const txCount = new Map<string, number>();
+    for (const t of txs ?? []) txCount.set(t.wine_id, (txCount.get(t.wine_id) ?? 0) + 1);
+
+    const invQty = new Map<string, number>();
+    for (const i of inv ?? []) invQty.set(i.wine_id, (invQty.get(i.wine_id) ?? 0) + i.quantity);
+
+    const producerMap = new Map<string, { wine_count: number; bottle_count: number; transaction_count: number }>();
+    for (const w of wines ?? []) {
+      const p = w.producer as string;
+      const cur = producerMap.get(p) ?? { wine_count: 0, bottle_count: 0, transaction_count: 0 };
+      cur.wine_count += 1;
+      cur.bottle_count += invQty.get(w.id) ?? 0;
+      cur.transaction_count += txCount.get(w.id) ?? 0;
+      producerMap.set(p, cur);
+    }
+
+    return [...producerMap.entries()]
+      .map(([producer, stats]) => ({ producer, ...stats }))
+      .sort((a, b) => b.transaction_count - a.transaction_count || b.wine_count - a.wine_count);
+  },
+
+  async getProducerWines(producer: string) {
+    const supabase = getSupabaseAdmin();
+    const { data: wines, error } = await supabase.from('wines').select('*').eq('producer', producer);
+    if (error) throw error;
+
+    const wineIds = (wines ?? []).map(w => w.id);
+    if (wineIds.length === 0) return [];
+
+    const { data: txs } = await supabase.from('bottle_transactions').select('wine_id').in('wine_id', wineIds);
+    const { data: inv } = await supabase.from('cellar_inventory').select('wine_id, quantity').in('wine_id', wineIds).gt('quantity', 0);
+
+    const txCount = new Map<string, number>();
+    for (const t of txs ?? []) txCount.set(t.wine_id, (txCount.get(t.wine_id) ?? 0) + 1);
+
+    const invQty = new Map<string, number>();
+    for (const i of inv ?? []) invQty.set(i.wine_id, (invQty.get(i.wine_id) ?? 0) + i.quantity);
+
+    return (wines ?? [])
+      .map(w => ({
+        ...w,
+        transaction_count: txCount.get(w.id) ?? 0,
+        bottle_count: invQty.get(w.id) ?? 0,
+      }))
+      .sort((a, b) => b.transaction_count - a.transaction_count || a.name.localeCompare(b.name));
   },
 };

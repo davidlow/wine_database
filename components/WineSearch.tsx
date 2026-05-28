@@ -1,7 +1,7 @@
 'use client';
 
-import { Search, X } from 'lucide-react';
-import { useCallback } from 'react';
+import { Search, X, ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import type { WineSearchParams, WineType, DrinkStatusFilter } from '@/types';
 import { cn } from '@/lib/utils';
 import SearchSuggest from '@/components/SearchSuggest';
@@ -28,7 +28,23 @@ interface Props {
 const filterInputCls = 'w-full px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring';
 
 export default function WineSearch({ params, onChange, onClear }: Props) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [regionSuggestions, setRegionSuggestions] = useState<string[]>([]);
+
   const hasFilters = Object.values(params).some((v) => v !== undefined && v !== '');
+  const hasAdvancedFilters = !!(
+    params.price_min != null || params.price_max != null ||
+    params.regions || params.appellation || params.vintage_year ||
+    params.country || params.variety
+  );
+
+  useEffect(() => {
+    if (!showAdvanced) return;
+    fetch('/api/wines/facets?field=region&q=')
+      .then(r => r.ok ? r.json() : [])
+      .then(setRegionSuggestions)
+      .catch(() => {});
+  }, [showAdvanced]);
 
   const handleType = useCallback((type: WineType) => {
     onChange('wine_type', params.wine_type === type ? undefined : type);
@@ -38,16 +54,25 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
     onChange('drink_status', params.drink_status === status ? undefined : status);
   }, [params.drink_status, onChange]);
 
+  const toggleRegion = useCallback((region: string) => {
+    const current = new Set((params.regions ?? '').split(',').filter(Boolean));
+    if (current.has(region)) { current.delete(region); } else { current.add(region); }
+    const next = [...current].join(',');
+    onChange('regions', next || undefined);
+  }, [params.regions, onChange]);
+
+  const activeRegions = new Set((params.regions ?? '').split(',').filter(Boolean));
+
   return (
     <div className="space-y-3">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         <input
           type="search"
-          placeholder="Search wines by name, producer, region…"
+          placeholder="Search name, producer, region, barcode…"
           value={params.query ?? ''}
           onChange={(e) => onChange('query', e.target.value || undefined)}
-          className="w-full pl-9 pr-4 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-full pl-9 pr-10 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {hasFilters && (
           <button
@@ -94,40 +119,145 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
         ))}
       </div>
 
-      {/* Additional filters row */}
-      <div className="flex flex-wrap gap-2">
-        <input
-          type="number"
-          placeholder="Vintage year"
-          value={params.vintage_year ?? ''}
-          onChange={(e) => onChange('vintage_year', e.target.value ? Number(e.target.value) : undefined)}
-          className="w-28 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <SearchSuggest
-          field="country"
-          value={params.country ?? ''}
-          onChange={(v) => onChange('country', v || undefined)}
-          placeholder="Country"
-          className="w-32"
-          inputClassName={filterInputCls}
-        />
-        <SearchSuggest
-          field="region"
-          value={params.region ?? ''}
-          onChange={(v) => onChange('region', v || undefined)}
-          placeholder="Region"
-          className="w-32"
-          inputClassName={filterInputCls}
-        />
-        <SearchSuggest
-          field="variety"
-          value={params.variety ?? ''}
-          onChange={(v) => onChange('variety', v || undefined)}
-          placeholder="Variety"
-          className="w-32"
-          inputClassName={filterInputCls}
-        />
-      </div>
+      {/* Advanced filters toggle */}
+      <button
+        onClick={() => setShowAdvanced(v => !v)}
+        className={cn(
+          'flex items-center gap-1.5 text-xs transition-colors',
+          (showAdvanced || hasAdvancedFilters)
+            ? 'text-primary font-medium'
+            : 'text-muted-foreground hover:text-foreground'
+        )}
+      >
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        Advanced Filters
+        {hasAdvancedFilters && !showAdvanced && (
+          <span className="ml-1 text-[10px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5">active</span>
+        )}
+        {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+      </button>
+
+      {showAdvanced && (
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-4">
+          {/* Price range */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Price Range ($)</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                placeholder="Min"
+                value={params.price_min ?? ''}
+                onChange={(e) => onChange('price_min', e.target.value ? Number(e.target.value) : undefined)}
+                className="w-24 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                min={0}
+              />
+              <span className="text-xs text-muted-foreground">–</span>
+              <input
+                type="number"
+                placeholder="Max"
+                value={params.price_max ?? ''}
+                onChange={(e) => onChange('price_max', e.target.value ? Number(e.target.value) : undefined)}
+                className="w-24 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                min={0}
+              />
+            </div>
+          </div>
+
+          {/* Vintage year */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Vintage Year</p>
+            <input
+              type="number"
+              placeholder="e.g. 2019"
+              value={params.vintage_year ?? ''}
+              onChange={(e) => onChange('vintage_year', e.target.value ? Number(e.target.value) : undefined)}
+              className="w-28 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          {/* Variety — partial match */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1">
+              Variety <span className="font-normal">(partial: &ldquo;cab&rdquo; finds all Cabernets)</span>
+            </p>
+            <SearchSuggest
+              field="variety"
+              value={params.variety ?? ''}
+              onChange={(v) => onChange('variety', v || undefined)}
+              placeholder="e.g. Cab, Chardonnay…"
+              className="w-full"
+              inputClassName={filterInputCls}
+            />
+          </div>
+
+          {/* Country */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Country</p>
+            <SearchSuggest
+              field="country"
+              value={params.country ?? ''}
+              onChange={(v) => onChange('country', v || undefined)}
+              placeholder="Country"
+              className="w-full"
+              inputClassName={filterInputCls}
+            />
+          </div>
+
+          {/* Region multi-select chips */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">
+              Regions
+              {activeRegions.size > 0 && (
+                <button
+                  onClick={() => onChange('regions', undefined)}
+                  className="ml-2 text-destructive hover:underline font-normal"
+                >
+                  Clear
+                </button>
+              )}
+            </p>
+            {regionSuggestions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {regionSuggestions.slice(0, 20).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => toggleRegion(r)}
+                    className={cn(
+                      'text-xs px-2.5 py-0.5 rounded-full border transition-colors',
+                      activeRegions.has(r)
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background hover:bg-accent border-input text-muted-foreground'
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            )}
+            <SearchSuggest
+              field="region"
+              value={params.region ?? ''}
+              onChange={(v) => onChange('region', v || undefined)}
+              placeholder="Or type exact region…"
+              className="w-full"
+              inputClassName={filterInputCls}
+            />
+          </div>
+
+          {/* Appellation */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Appellation</p>
+            <SearchSuggest
+              field="appellation"
+              value={params.appellation ?? ''}
+              onChange={(v) => onChange('appellation', v || undefined)}
+              placeholder="e.g. Napa Valley, Bordeaux…"
+              className="w-full"
+              inputClassName={filterInputCls}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

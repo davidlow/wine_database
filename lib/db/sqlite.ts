@@ -92,12 +92,26 @@ export const sqliteAdapter: DbAdapter = {
       const q = `%${params.query}%`;
       values.push(q, q, q, q, q, q, q);
     }
-    if (params.variety) { conditions.push('w.variety = ?'); values.push(params.variety); }
+    // variety: partial match so "cab" finds all Cabernet varieties
+    if (params.variety) { conditions.push('w.variety LIKE ?'); values.push(`%${params.variety}%`); }
     if (params.wine_type) { conditions.push('w.wine_type = ?'); values.push(params.wine_type); }
     if (params.country) { conditions.push('w.country = ?'); values.push(params.country); }
     if (params.region) { conditions.push('w.region = ?'); values.push(params.region); }
+    if (params.appellation) { conditions.push('w.appellation LIKE ?'); values.push(`%${params.appellation}%`); }
     if (params.vintage_year) { conditions.push('w.vintage_year = ?'); values.push(params.vintage_year); }
     if (params.producer) { conditions.push('w.producer LIKE ?'); values.push(`%${params.producer}%`); }
+    if (params.price_min != null) { conditions.push('w.average_price >= ?'); values.push(params.price_min); }
+    if (params.price_max != null) { conditions.push('w.average_price <= ?'); values.push(params.price_max); }
+
+    // Multi-select regions (matches region OR appellation for any of the values)
+    if (params.regions) {
+      const regionList = params.regions.split(',').map(s => s.trim()).filter(Boolean);
+      if (regionList.length > 0) {
+        const ph = regionList.map(() => '?').join(', ');
+        conditions.push(`(w.region IN (${ph}) OR w.appellation IN (${ph}))`);
+        values.push(...regionList, ...regionList);
+      }
+    }
 
     if (profileIds.length > 0) {
       const placeholders = profileIds.map(() => '?').join(', ');
@@ -484,5 +498,37 @@ export const sqliteAdapter: DbAdapter = {
       ORDER BY bt.created_at DESC
       LIMIT ?
     `).all(profileId, limit) as BottleTransaction[];
+  },
+
+  // --- Producers ---
+
+  async getProducers() {
+    return getDb().prepare(`
+      SELECT
+        w.producer,
+        COUNT(DISTINCT w.id) AS wine_count,
+        COALESCE(SUM(ci.quantity), 0) AS bottle_count,
+        COUNT(bt.id) AS transaction_count
+      FROM wines w
+      LEFT JOIN cellar_inventory ci ON ci.wine_id = w.id AND ci.quantity > 0
+      LEFT JOIN bottle_transactions bt ON bt.wine_id = w.id
+      WHERE w.producer IS NOT NULL AND w.producer != ''
+      GROUP BY w.producer
+      ORDER BY transaction_count DESC, wine_count DESC
+    `).all() as import('@/types').ProducerStats[];
+  },
+
+  async getProducerWines(producer: string) {
+    return getDb().prepare(`
+      SELECT w.*,
+        COUNT(DISTINCT bt.id) AS transaction_count,
+        COALESCE(SUM(ci.quantity), 0) AS bottle_count
+      FROM wines w
+      LEFT JOIN bottle_transactions bt ON bt.wine_id = w.id
+      LEFT JOIN cellar_inventory ci ON ci.wine_id = w.id AND ci.quantity > 0
+      WHERE w.producer = ?
+      GROUP BY w.id
+      ORDER BY transaction_count DESC, w.name ASC
+    `).all(producer) as (import('@/types').Wine & { transaction_count: number; bottle_count: number })[];
   },
 };

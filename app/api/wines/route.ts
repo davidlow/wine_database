@@ -12,10 +12,14 @@ export async function GET(request: NextRequest) {
       wine_type: (searchParams.get('wine_type') as WineType) ?? undefined,
       country: searchParams.get('country') ?? undefined,
       region: searchParams.get('region') ?? undefined,
+      regions: searchParams.get('regions') ?? undefined,
+      appellation: searchParams.get('appellation') ?? undefined,
       vintage_year: searchParams.get('vintage_year') ? Number(searchParams.get('vintage_year')) : undefined,
       producer: searchParams.get('producer') ?? undefined,
       profile_ids: searchParams.get('profile_ids') ?? undefined,
       drink_status: (searchParams.get('drink_status') as DrinkStatusFilter) ?? undefined,
+      price_min: searchParams.get('price_min') ? Number(searchParams.get('price_min')) : undefined,
+      price_max: searchParams.get('price_max') ? Number(searchParams.get('price_max')) : undefined,
     };
 
     const db = await getDb();

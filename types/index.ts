@@ -89,10 +89,12 @@ export type DrinkStatusFilter = 'past_peak' | 'too_young' | 'in_window';
 
 export interface WineSearchParams {
   query?: string;
-  variety?: string;
+  variety?: string;        // partial match (LIKE) — includes autocomplete flow
   wine_type?: WineType;
   country?: string;
-  region?: string;
+  region?: string;         // single exact-match region
+  regions?: string;        // comma-separated multi-select (matches region OR appellation)
+  appellation?: string;
   vintage_year?: number;
   producer?: string;
   profile_id?: string;
@@ -100,6 +102,9 @@ export interface WineSearchParams {
   profile_ids?: string;
   // Drink window status filter
   drink_status?: DrinkStatusFilter;
+  // Price range
+  price_min?: number;
+  price_max?: number;
 }
 
 export interface WineNote {
@@ -108,6 +113,13 @@ export interface WineNote {
   note: string;
   tasted_at?: string;
   created_at: string;
+}
+
+export interface ProducerStats {
+  producer: string;
+  wine_count: number;
+  bottle_count: number;
+  transaction_count: number;
 }
 
 export interface AddBottleInput {
@@ -196,4 +208,8 @@ export interface DbAdapter {
   getWineNotes(wineId: string): Promise<WineNote[]>;
   addWineNote(wineId: string, note: string, tastedAt?: string): Promise<WineNote>;
   deleteWineNote(noteId: string): Promise<void>;
+
+  // Producers
+  getProducers(): Promise<ProducerStats[]>;
+  getProducerWines(producer: string): Promise<(Wine & { transaction_count: number; bottle_count: number })[]>;
 }
