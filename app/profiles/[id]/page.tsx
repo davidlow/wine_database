@@ -4,7 +4,7 @@ import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Check, ChevronDown, ChevronRight, Edit2,
-  Loader2, MapPin, PackagePlus, Plus, Trash2, Wine, X,
+  Loader2, MapPin, PackagePlus, Plus, SkipForward, Trash2, Wrench, Wine, X,
 } from 'lucide-react';
 import type { CellarInventory, Location, Profile, BottleTransaction } from '@/types';
 import { useProfile } from '@/hooks/useProfile';
@@ -211,6 +211,167 @@ function AddLocationForm({ profileId, existingGroups, onCreated, onCancel }: Add
   );
 }
 
+// ── Register Missing Locations Wizard ────────────────────────────────────────
+type WizardResult = { name: string; action: 'registered' | 'skipped' | 'failed' };
+
+function RegisterMissingWizard({
+  virtualLocations,
+  profileId,
+  onComplete,
+  onCancel,
+}: {
+  virtualLocations: DisplayLocation[];
+  profileId: string;
+  onComplete: () => void;
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<WizardResult[]>([]);
+  const [done, setDone] = useState(false);
+
+  const current = virtualLocations[step];
+  const total = virtualLocations.length;
+
+  const advance = (result: WizardResult) => {
+    const next = [...results, result];
+    setResults(next);
+    if (step + 1 >= total) {
+      setDone(true);
+    } else {
+      setStep(s => s + 1);
+      setError(null);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!current) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId, name: current.name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Failed to register');
+      }
+      advance({ name: current.name, action: 'registered' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+      advance({ name: current.name, action: 'failed' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSkip = () => {
+    advance({ name: current.name, action: 'skipped' });
+  };
+
+  if (done) {
+    const registered = results.filter(r => r.action === 'registered').length;
+    const skipped = results.filter(r => r.action === 'skipped').length;
+    const failed = results.filter(r => r.action === 'failed').length;
+    return (
+      <div className="bg-card rounded-xl border shadow-lg max-w-sm w-full p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Check className="h-5 w-5 text-green-600" />
+          <h3 className="font-semibold text-base">Done</h3>
+        </div>
+        <div className="space-y-1.5">
+          {results.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm">
+              {r.action === 'registered' && <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />}
+              {r.action === 'skipped' && <SkipForward className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+              {r.action === 'failed' && <X className="h-3.5 w-3.5 text-destructive shrink-0" />}
+              <span className="truncate">{r.name}</span>
+              <span className="text-xs text-muted-foreground ml-auto shrink-0">{r.action}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {registered} registered, {skipped} skipped{failed > 0 ? `, ${failed} failed` : ''}.
+          {registered > 0 && ' Use the edit button on each location to add capacity and grouping.'}
+        </p>
+        <button
+          onClick={onComplete}
+          className="w-full px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    );
+  }
+
+  if (!current) return null;
+  const bottleCount = current.current_quantity ?? 0;
+
+  return (
+    <div className="bg-card rounded-xl border shadow-lg max-w-sm w-full p-6 space-y-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs text-muted-foreground font-medium">
+            Location {step + 1} of {total}
+          </p>
+          <h3 className="font-semibold text-base mt-0.5">Register Missing Location?</h3>
+        </div>
+        <button onClick={onCancel} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="rounded-lg bg-muted/50 border p-4 space-y-1">
+        <div className="flex items-center gap-2">
+          <MapPin className="h-4 w-4 text-primary shrink-0" />
+          <p className="font-medium text-sm">{current.name}</p>
+        </div>
+        <p className="text-xs text-muted-foreground pl-6">
+          {bottleCount} bottle{bottleCount !== 1 ? 's' : ''} stored here
+        </p>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        This location exists in your inventory but has no registered entry. Registering it lets you add
+        capacity limits and grouping.
+      </p>
+
+      {error && (
+        <p className="text-xs text-destructive bg-destructive/10 rounded px-3 py-2">{error}</p>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleRegister}
+          disabled={saving}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          Register
+        </button>
+        <button
+          onClick={handleSkip}
+          disabled={saving}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-md border text-sm hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          <SkipForward className="h-4 w-4" />
+          Skip
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={saving}
+          className="px-4 py-2 rounded-md border text-sm text-muted-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          Cancel All
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Location link helper ──────────────────────────────────────────────────────
 function LocationLink({ profileId, locationName, className }: { profileId: string; locationName: string; className?: string }) {
   if (!locationName) return <span className={cn('italic text-amber-600', className)}>Unlocated</span>;
@@ -240,6 +401,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
 
   // Location management state
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showRegisterWizard, setShowRegisterWizard] = useState(false);
   const [editingLocId, setEditingLocId] = useState<string | null>(null);
   const [deleteLocId, setDeleteLocId] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -618,9 +780,19 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {virtualLocations.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Dashed locations come from your inventory. Click <strong>Register</strong> to add capacity tracking and grouping.
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Dashed locations come from your inventory. Click <strong>Register</strong> on individual locations,
+                  or use <strong>Fix Missing</strong> to register them all at once.
+                </p>
+                <button
+                  onClick={() => setShowRegisterWizard(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-xs font-medium hover:bg-amber-200 transition-colors shrink-0"
+                >
+                  <Wrench className="h-3.5 w-3.5" />
+                  Fix Missing ({virtualLocations.length})
+                </button>
+              </div>
             )}
 
             {/* Grouped location list */}
@@ -725,6 +897,21 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
+
+      {/* ── Register Missing Locations wizard modal ── */}
+      {showRegisterWizard && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowRegisterWizard(false); }}
+        >
+          <RegisterMissingWizard
+            virtualLocations={virtualLocations}
+            profileId={id}
+            onComplete={async () => { setShowRegisterWizard(false); await loadAll(); }}
+            onCancel={() => setShowRegisterWizard(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
