@@ -22,6 +22,8 @@ export interface Wine {
   description?: string;
   average_price?: number;
   alcohol_content?: number;
+  drink_from_year?: number;
+  drink_by_year?: number;
   barcode?: string;
   image_url?: string;
   created_at: string;
@@ -134,6 +136,8 @@ export interface BulkScanItem {
   country?: string;
   description?: string;
   average_price?: number;
+  drink_from_year?: number;
+  drink_by_year?: number;
   purchase_price?: number;       // per-item override; pre-populated from average_price
   source?: 'database' | 'openfoodfacts' | 'gemini-batch' | 'manual';
   found?: boolean;

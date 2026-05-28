@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS wines (
   description TEXT,
   average_price REAL,
   alcohol_content REAL,
+  drink_from_year INTEGER,
+  drink_by_year INTEGER,
   barcode TEXT UNIQUE,
   image_url TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -52,9 +54,25 @@ CREATE TABLE IF NOT EXISTS bottle_transactions (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Named storage locations with optional capacity tracking.
+-- location TEXT in cellar_inventory matches locations.name for the same profile_id.
+-- Bottles with location='' are "unlocated" (received but not yet placed).
+CREATE TABLE IF NOT EXISTS locations (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  group_name TEXT,
+  max_capacity INTEGER,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(profile_id, name)
+);
+
 CREATE INDEX IF NOT EXISTS idx_wines_barcode ON wines(barcode);
 CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(name);
 CREATE INDEX IF NOT EXISTS idx_cellar_wine_id ON cellar_inventory(wine_id);
 CREATE INDEX IF NOT EXISTS idx_cellar_profile_id ON cellar_inventory(profile_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_wine_id ON bottle_transactions(wine_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_profile_id ON bottle_transactions(profile_id);
+CREATE INDEX IF NOT EXISTS idx_locations_profile_id ON locations(profile_id);

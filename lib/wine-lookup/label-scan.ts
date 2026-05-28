@@ -1,8 +1,10 @@
 import type { WineLookupResult } from './types';
 import type { WineType } from '@/types';
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 const PROMPT = `You are a wine expert. Analyze this wine bottle label image and extract structured information.
-Use Google Search to look up the wine and fill in any details not visible on the label (grape variety, region, appellation, vintage if not shown, typical price range).
+Use Google Search to look up the wine and fill in any details not visible on the label (grape variety, region, appellation, vintage if not shown, typical retail price, drink window).
 
 Return ONLY a JSON object — no markdown, no code fences, no extra text:
 {
@@ -15,12 +17,18 @@ Return ONLY a JSON object — no markdown, no code fences, no extra text:
   "appellation": "specific appellation e.g. Oakville AVA, Pommard Premier Cru",
   "country": "country of origin e.g. USA, France, Italy",
   "alcohol_content": 14.5,
+  "average_price": 24.99,
+  "drink_from_year": ${CURRENT_YEAR},
+  "drink_by_year": ${CURRENT_YEAR + 10},
   "description": "one short sentence describing the wine style",
   "confidence": 0.95
 }
 
 Rules:
 - "name" is required; omit any other field you genuinely cannot determine
+- "average_price" is the typical retail price in USD — search for it if not on the label; omit if truly unknown
+- "drink_from_year" is the earliest year this wine should be drunk (when it will be ready)
+- "drink_by_year" is the last year this wine should be drunk (after this it declines) — default to vintage_year + 10 if unknown, or ${CURRENT_YEAR + 10} if no vintage
 - Do not guess randomly — omit uncertain fields rather than fabricate them
 - "confidence" (0.0–1.0) reflects certainty in the overall extraction`;
 
@@ -53,6 +61,9 @@ type WineData = {
   appellation?: string;
   country?: string;
   alcohol_content?: number;
+  average_price?: number;
+  drink_from_year?: number;
+  drink_by_year?: number;
   description?: string;
   confidence?: number;
 };
@@ -72,7 +83,7 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
 
-  const model = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
+  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
   const useGrounding = process.env.GEMINI_GROUNDING !== 'false';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -128,6 +139,9 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
     appellation: data.appellation,
     country: data.country,
     alcohol_content: data.alcohol_content,
+    average_price: data.average_price,
+    drink_from_year: data.drink_from_year,
+    drink_by_year: data.drink_by_year,
     description: data.description,
     source: 'label-scan',
     confidence: data.confidence,

@@ -45,6 +45,7 @@ function Field({ label, required, children, hint }: {
 }
 
 export default function WineForm({ initialData, lookupResult, onSubmit, onCancel, submitLabel = 'Save Wine' }: Props) {
+  const currentYear = new Date().getFullYear();
   const merged = { ...lookupResult, ...initialData };
   const [form, setForm] = useState<WineFormData>({
     name: merged.name ?? '',
@@ -58,6 +59,8 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
     description: merged.description ?? '',
     average_price: merged.average_price,
     alcohol_content: merged.alcohol_content,
+    drink_from_year: merged.drink_from_year ?? currentYear,
+    drink_by_year: merged.drink_by_year ?? (currentYear + 10),
     barcode: merged.barcode ?? '',
     image_url: merged.image_url ?? '',
   });
@@ -205,6 +208,30 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
             min={0}
             max={100}
             step={0.1}
+          />
+        </Field>
+
+        <Field label="Drink From Year" hint="Earliest year this wine is ready to drink">
+          <input
+            type="number"
+            className={inputCls}
+            value={form.drink_from_year ?? ''}
+            onChange={(e) => set('drink_from_year', e.target.value ? Number(e.target.value) : undefined)}
+            placeholder={String(new Date().getFullYear())}
+            min={1900}
+            max={2100}
+          />
+        </Field>
+
+        <Field label="Drink By Year" hint="Last recommended year to drink this wine">
+          <input
+            type="number"
+            className={inputCls}
+            value={form.drink_by_year ?? ''}
+            onChange={(e) => set('drink_by_year', e.target.value ? Number(e.target.value) : undefined)}
+            placeholder={String(new Date().getFullYear() + 10)}
+            min={1900}
+            max={2100}
           />
         </Field>
 

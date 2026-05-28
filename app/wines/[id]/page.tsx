@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Edit, Trash2, MapPin, Calendar, DollarSign, Percent } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, MapPin, Calendar, DollarSign, Percent, GlassWater } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import type { Wine, CellarInventory, BottleTransaction } from '@/types';
 import BottleManager from '@/components/BottleManager';
@@ -148,6 +148,26 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
                 <span>{wine.alcohol_content}% ABV</span>
               </div>
             )}
+            {(wine.drink_from_year != null || wine.drink_by_year != null) && (() => {
+              const year = new Date().getFullYear();
+              const from = wine.drink_from_year;
+              const by = wine.drink_by_year;
+              const tooYoung = from != null && year < from;
+              const expired = by != null && year > by;
+              return (
+                <div className={cn('flex items-center gap-1.5 col-span-2',
+                  tooYoung ? 'text-blue-600' : expired ? 'text-red-600' : 'text-green-600'
+                )}>
+                  <GlassWater className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {from != null && by != null ? `Drink ${from}–${by}` :
+                     from != null ? `Ready from ${from}` :
+                     by != null ? `Drink by ${by}` : ''}
+                    {tooYoung ? ' · Too young' : expired ? ' · Past peak' : ' · In window'}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {wine.description && (
@@ -190,6 +210,7 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             profiles={profiles}
             inventory={inventory}
             onRefresh={loadInventory}
+            suggestedPrice={wine.average_price}
           />
         )}
 
