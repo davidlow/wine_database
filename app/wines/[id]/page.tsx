@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Edit, Trash2, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Copy, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import type { Wine, CellarInventory, BottleTransaction, WineNote } from '@/types';
 import BottleManager from '@/components/BottleManager';
@@ -115,8 +115,11 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
           <h2 className="text-lg font-bold truncate">{wine.name}</h2>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/wines/${id}/edit`} className="p-2 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
+          <Link href={`/wines/${id}/edit`} className="p-2 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground" title="Edit wine">
             <Edit className="h-4 w-4" />
+          </Link>
+          <Link href={`/wines/new?copy_from=${id}`} className="p-2 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground" title="Duplicate wine">
+            <Copy className="h-4 w-4" />
           </Link>
           {deleteConfirm ? (
             <div className="flex items-center gap-1">
