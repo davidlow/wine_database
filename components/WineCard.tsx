@@ -1,16 +1,37 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { MapPin, Calendar } from 'lucide-react';
-import type { Wine, CellarInventory } from '@/types';
+import { MapPin, Calendar, Plus, Wine as WineIcon, GlassWater, Grape } from 'lucide-react';
+import type { Wine, CellarInventory, WineType } from '@/types';
 import { cn, wineTypeLabel, wineTypeColor, formatPrice } from '@/lib/utils';
 
 interface Props {
   wine: Wine;
   inventory?: CellarInventory[];
   href?: string;
+  onAdd?: () => void;
 }
 
-export default function WineCard({ wine, inventory, href }: Props) {
+const WINE_ICON_CFG: Record<string, { bg: string; iconColor: string; icon: 'wine' | 'flute' | 'grape' }> = {
+  red:       { bg: 'bg-red-900',    iconColor: 'text-red-200',    icon: 'wine' },
+  white:     { bg: 'bg-amber-50 border border-amber-200',  iconColor: 'text-amber-600',   icon: 'wine' },
+  'rosé':    { bg: 'bg-pink-100',   iconColor: 'text-pink-600',   icon: 'wine' },
+  sparkling: { bg: 'bg-sky-100',    iconColor: 'text-sky-600',    icon: 'flute' },
+  dessert:   { bg: 'bg-amber-100',  iconColor: 'text-amber-700',  icon: 'grape' },
+  fortified: { bg: 'bg-amber-900',  iconColor: 'text-amber-200',  icon: 'wine' },
+  other:     { bg: 'bg-gray-200',   iconColor: 'text-gray-500',   icon: 'wine' },
+};
+
+function WineTypeIcon({ type }: { type?: WineType | null }) {
+  const cfg = (type && WINE_ICON_CFG[type]) ?? WINE_ICON_CFG.other;
+  const Icon = cfg.icon === 'flute' ? GlassWater : cfg.icon === 'grape' ? Grape : WineIcon;
+  return (
+    <div className={cn('h-16 w-12 shrink-0 rounded flex items-center justify-center', cfg.bg)}>
+      <Icon className={cn('h-7 w-7', cfg.iconColor)} />
+    </div>
+  );
+}
+
+export default function WineCard({ wine, inventory, href, onAdd }: Props) {
   const totalBottles = inventory?.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
   const card = (
     <div className="group flex gap-3 rounded-lg border bg-card p-3 hover:shadow-md transition-shadow">
@@ -19,9 +40,7 @@ export default function WineCard({ wine, inventory, href }: Props) {
           <Image src={wine.image_url} alt={wine.name} fill className="object-cover" />
         </div>
       ) : (
-        <div className="h-16 w-12 shrink-0 rounded bg-muted flex items-center justify-center text-2xl select-none">
-          🍷
-        </div>
+        <WineTypeIcon type={wine.wine_type} />
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
@@ -71,6 +90,19 @@ export default function WineCard({ wine, inventory, href }: Props) {
     </div>
   );
 
-  if (href) return <Link href={href}>{card}</Link>;
-  return card;
+  const inner = href ? <Link href={href} className="block">{card}</Link> : card;
+
+  if (!onAdd) return inner;
+  return (
+    <div className="relative">
+      {inner}
+      <button
+        onClick={e => { e.stopPropagation(); e.preventDefault(); onAdd(); }}
+        title="Quick-add bottle"
+        className="absolute top-2 right-2 h-7 w-7 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center shadow-sm transition-colors z-10"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+    </div>
+  );
 }

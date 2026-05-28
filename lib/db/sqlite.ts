@@ -87,10 +87,10 @@ export const sqliteAdapter: DbAdapter = {
 
     if (params.query) {
       conditions.push(
-        "(w.name LIKE ? OR w.producer LIKE ? OR w.variety LIKE ? OR w.region LIKE ? OR w.appellation LIKE ? OR w.country LIKE ?)"
+        "(w.name LIKE ? OR w.producer LIKE ? OR w.variety LIKE ? OR w.region LIKE ? OR w.appellation LIKE ? OR w.country LIKE ? OR w.barcode LIKE ?)"
       );
       const q = `%${params.query}%`;
-      values.push(q, q, q, q, q, q);
+      values.push(q, q, q, q, q, q, q);
     }
     if (params.variety) { conditions.push('w.variety = ?'); values.push(params.variety); }
     if (params.wine_type) { conditions.push('w.wine_type = ?'); values.push(params.wine_type); }

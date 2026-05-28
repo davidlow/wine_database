@@ -31,7 +31,7 @@ export const supabaseAdapter: DbAdapter = {
 
     if (params.query) {
       query = query.or(
-        `name.ilike.%${params.query}%,producer.ilike.%${params.query}%,variety.ilike.%${params.query}%,region.ilike.%${params.query}%,country.ilike.%${params.query}%`
+        `name.ilike.%${params.query}%,producer.ilike.%${params.query}%,variety.ilike.%${params.query}%,region.ilike.%${params.query}%,country.ilike.%${params.query}%,barcode.ilike.%${params.query}%`
       );
     }
     if (params.variety) query = query.eq('variety', params.variety);
