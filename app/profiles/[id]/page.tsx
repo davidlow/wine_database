@@ -753,6 +753,34 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
         </button>
       </div>
 
+      {/* Past peak alert — scrollable wine cards */}
+      {pastPeakItems.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-red-700">
+            <Wine className="h-3.5 w-3.5" />
+            Past Peak
+            <span className="font-normal">({pastPeakBottles} bottle{pastPeakBottles !== 1 ? 's' : ''})</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {pastPeakItems.map((item, i) => (
+              <Link
+                key={`${item.wine_id}-${item.location}-${i}`}
+                href={`/wines/${item.wine_id}`}
+                className="shrink-0 rounded-md border bg-white/80 px-3 py-2 text-xs min-w-[140px] max-w-[180px] hover:bg-white transition-colors"
+              >
+                <p className="font-medium leading-tight line-clamp-2">{item.wine?.name ?? 'Unknown Wine'}</p>
+                {item.wine?.vintage_year && <p className="text-muted-foreground mt-0.5">{item.wine.vintage_year}</p>}
+                <p className="text-muted-foreground truncate mt-0.5">{item.location || 'Unlocated'}</p>
+                {item.wine?.drink_by_year && (
+                  <p className="text-red-600 mt-0.5">By {item.wine.drink_by_year}</p>
+                )}
+                <p className="text-muted-foreground mt-0.5">{item.quantity}×</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="space-y-4">
         <div className="flex gap-0 border-b overflow-x-auto">

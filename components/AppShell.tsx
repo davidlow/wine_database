@@ -5,9 +5,13 @@ import { usePathname } from 'next/navigation';
 import { Home, Wine, ScanLine, Layers, BarChart2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
+import { useProfile } from '@/hooks/useProfile';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { activeProfile } = useProfile();
+  // Go directly to the active cellar when one is saved; fall back to the list
+  const cellarsHref = activeProfile ? `/profiles/${activeProfile.id}` : '/profiles';
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -47,7 +51,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <ScanLine className="h-4 w-4 shrink-0" />
             Scanner
           </Link>
-          <Link href="/profiles" className={navItemCls(isActive('/profiles'))}>
+          <Link href={cellarsHref} className={navItemCls(isActive('/profiles'))}>
             <Layers className="h-4 w-4 shrink-0" />
             Cellars
           </Link>
@@ -90,7 +94,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <ScanLine className="h-5 w-5" />
             Scanner
           </Link>
-          <Link href="/profiles" className={mobileNavItemCls(isActive('/profiles'))}>
+          <Link href={cellarsHref} className={mobileNavItemCls(isActive('/profiles'))}>
             <Layers className="h-5 w-5" />
             Cellars
           </Link>
