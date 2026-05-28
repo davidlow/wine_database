@@ -406,6 +406,21 @@ export const sqliteAdapter: DbAdapter = {
     getDb().prepare('DELETE FROM locations WHERE id = ?').run(id);
   },
 
+  // --- Facets ---
+
+  async getWineFacets(field: string, q: string): Promise<string[]> {
+    const ALLOWED = ['variety', 'country', 'region', 'producer', 'appellation'];
+    if (!ALLOWED.includes(field)) return [];
+    const d = getDb();
+    const rows = d.prepare(`
+      SELECT DISTINCT ${field} FROM wines
+      WHERE ${field} IS NOT NULL AND ${field} != '' AND ${field} LIKE ?
+      ORDER BY ${field} ASC
+      LIMIT 20
+    `).all(`%${q}%`) as Record<string, string>[];
+    return rows.map(r => r[field]);
+  },
+
   // --- Transactions ---
 
   async getTransactions(profileId: string, _userId: string, limit = 50): Promise<BottleTransaction[]> {

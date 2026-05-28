@@ -4,6 +4,7 @@ import { Search, X } from 'lucide-react';
 import { useCallback } from 'react';
 import type { WineSearchParams, WineType } from '@/types';
 import { cn } from '@/lib/utils';
+import SearchSuggest from '@/components/SearchSuggest';
 
 const WINE_TYPES: WineType[] = ['red', 'white', 'rosé', 'sparkling', 'dessert', 'fortified', 'other'];
 
@@ -17,6 +18,8 @@ interface Props {
   onChange: <K extends keyof WineSearchParams>(key: K, value: WineSearchParams[K]) => void;
   onClear: () => void;
 }
+
+const filterInputCls = 'w-full px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring';
 
 export default function WineSearch({ params, onChange, onClear }: Props) {
   const hasFilters = Object.values(params).some((v) => v !== undefined && v !== '');
@@ -74,26 +77,29 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
           onChange={(e) => onChange('vintage_year', e.target.value ? Number(e.target.value) : undefined)}
           className="w-28 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
         />
-        <input
-          type="text"
-          placeholder="Country"
+        <SearchSuggest
+          field="country"
           value={params.country ?? ''}
-          onChange={(e) => onChange('country', e.target.value || undefined)}
-          className="w-32 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          onChange={(v) => onChange('country', v || undefined)}
+          placeholder="Country"
+          className="w-32"
+          inputClassName={filterInputCls}
         />
-        <input
-          type="text"
-          placeholder="Region"
+        <SearchSuggest
+          field="region"
           value={params.region ?? ''}
-          onChange={(e) => onChange('region', e.target.value || undefined)}
-          className="w-32 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          onChange={(v) => onChange('region', v || undefined)}
+          placeholder="Region"
+          className="w-32"
+          inputClassName={filterInputCls}
         />
-        <input
-          type="text"
-          placeholder="Variety"
+        <SearchSuggest
+          field="variety"
           value={params.variety ?? ''}
-          onChange={(e) => onChange('variety', e.target.value || undefined)}
-          className="w-32 px-2 py-1 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          onChange={(v) => onChange('variety', v || undefined)}
+          placeholder="Variety"
+          className="w-32"
+          inputClassName={filterInputCls}
         />
       </div>
     </div>

@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import type { Wine, WineType } from '@/types';
 import type { WineLookupResult } from '@/lib/wine-lookup/types';
 import { cn } from '@/lib/utils';
+import SearchSuggest from '@/components/SearchSuggest';
 
 type WineFormData = Omit<Wine, 'id' | 'created_at' | 'updated_at'>;
 
@@ -124,7 +125,13 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
         </Field>
 
         <Field label="Grape Variety">
-          <input className={inputCls} value={form.variety ?? ''} onChange={(e) => set('variety', e.target.value)} placeholder="e.g. Cabernet Sauvignon" />
+          <SearchSuggest
+            field="variety"
+            value={form.variety ?? ''}
+            onChange={(v) => set('variety', v)}
+            placeholder="e.g. Cabernet Sauvignon"
+            inputClassName={inputCls}
+          />
         </Field>
 
         <Field label="Wine Type">
@@ -153,11 +160,23 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
         </Field>
 
         <Field label="Country">
-          <input className={inputCls} value={form.country ?? ''} onChange={(e) => set('country', e.target.value)} placeholder="e.g. USA" />
+          <SearchSuggest
+            field="country"
+            value={form.country ?? ''}
+            onChange={(v) => set('country', v)}
+            placeholder="e.g. USA"
+            inputClassName={inputCls}
+          />
         </Field>
 
         <Field label="Region">
-          <input className={inputCls} value={form.region ?? ''} onChange={(e) => set('region', e.target.value)} placeholder="e.g. Napa Valley" />
+          <SearchSuggest
+            field="region"
+            value={form.region ?? ''}
+            onChange={(v) => set('region', v)}
+            placeholder="e.g. Napa Valley"
+            inputClassName={inputCls}
+          />
         </Field>
 
         <Field label="Appellation">

@@ -4,9 +4,11 @@ import type {
   Profile,
   CellarInventory,
   BottleTransaction,
+  Location,
   WineSearchParams,
   AddBottleInput,
   RemoveBottleInput,
+  MoveBottleInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
@@ -231,6 +233,103 @@ export const supabaseAdapter: DbAdapter = {
       cellar_inventory_id: input.cellar_inventory_id, transaction_type: 'remove',
       quantity: input.quantity, location: existing.location, notes: input.notes ?? null, created_at: now,
     });
+  },
+
+  async moveBottle(input: MoveBottleInput, _userId: string): Promise<void> {
+    const supabase = getSupabaseAdmin();
+    const { data: existing, error: fetchErr } = await supabase
+      .from('cellar_inventory').select('*').eq('id', input.cellar_inventory_id).single();
+    if (fetchErr || !existing) throw new Error('Inventory item not found');
+    if (input.quantity > existing.quantity) throw new Error('Cannot move more bottles than available');
+
+    const now = new Date().toISOString();
+    const remainingQty = existing.quantity - input.quantity;
+
+    if (remainingQty > 0) {
+      await supabase.from('cellar_inventory')
+        .update({ quantity: remainingQty, updated_at: now })
+        .eq('id', input.cellar_inventory_id);
+    } else {
+      await supabase.from('cellar_inventory').delete().eq('id', input.cellar_inventory_id);
+    }
+
+    const { data: dest } = await supabase.from('cellar_inventory').select('*')
+      .eq('wine_id', existing.wine_id).eq('profile_id', existing.profile_id)
+      .eq('location', input.new_location).single();
+
+    if (dest) {
+      await supabase.from('cellar_inventory')
+        .update({ quantity: dest.quantity + input.quantity, updated_at: now })
+        .eq('id', dest.id);
+    } else {
+      await supabase.from('cellar_inventory').insert({
+        id: generateId(), wine_id: existing.wine_id, profile_id: existing.profile_id,
+        location: input.new_location, quantity: input.quantity,
+        purchase_price: existing.purchase_price, created_at: now, updated_at: now,
+      });
+    }
+
+    await supabase.from('bottle_transactions').insert({
+      id: generateId(), wine_id: existing.wine_id, profile_id: existing.profile_id,
+      cellar_inventory_id: input.cellar_inventory_id, transaction_type: 'move',
+      quantity: input.quantity, location: input.new_location,
+      notes: input.notes ?? null, created_at: now,
+    });
+  },
+
+  // --- Locations ---
+
+  async getLocations(profileId: string): Promise<Location[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('locations').select('*').eq('profile_id', profileId).order('name');
+    if (error) throw error;
+    return (data as Location[]).map(loc => ({ ...loc }));
+  },
+
+  async createLocation(data): Promise<Location> {
+    const now = new Date().toISOString();
+    const loc: Location = { ...data, id: generateId(), created_at: now, updated_at: now };
+    const { data: created, error } = await getSupabaseAdmin()
+      .from('locations').insert(loc).select().single();
+    if (error) throw error;
+    return created as Location;
+  },
+
+  async updateLocation(id, data): Promise<Location> {
+    const patch = { ...data, group_name: data.group_name ?? null, updated_at: new Date().toISOString() };
+    const { data: updated, error } = await getSupabaseAdmin()
+      .from('locations')
+      .update(patch)
+      .eq('id', id).select().single();
+    if (error) throw error;
+    return updated as Location;
+  },
+
+  async deleteLocation(id): Promise<void> {
+    const { error } = await getSupabaseAdmin().from('locations').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- Facets ---
+
+  async getWineFacets(field: string, q: string): Promise<string[]> {
+    const ALLOWED = ['variety', 'country', 'region', 'producer', 'appellation'];
+    if (!ALLOWED.includes(field)) return [];
+    const { data, error } = await getSupabaseAdmin()
+      .from('wines')
+      .select(field)
+      .ilike(field, `%${q}%`)
+      .not(field, 'is', null)
+      .order(field)
+      .limit(20);
+    if (error) throw error;
+    const seen = new Set<string>();
+    const results: string[] = [];
+    for (const row of (data ?? [])) {
+      const val = (row as unknown as Record<string, string>)[field];
+      if (val && !seen.has(val)) { seen.add(val); results.push(val); }
+    }
+    return results;
   },
 
   // --- Transactions ---

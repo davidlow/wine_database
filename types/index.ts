@@ -170,6 +170,9 @@ export interface DbAdapter {
   removeBottle(input: RemoveBottleInput, userId: string): Promise<void>;
   moveBottle(input: MoveBottleInput, userId: string): Promise<void>;
 
+  // Facets (distinct field values for autocomplete)
+  getWineFacets(field: string, q: string): Promise<string[]>;
+
   // Transactions
   getTransactions(profileId: string, userId: string, limit?: number): Promise<BottleTransaction[]>;
 }
