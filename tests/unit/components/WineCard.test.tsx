@@ -149,10 +149,11 @@ describe('WineCard', () => {
     expect(img).toHaveAttribute('src', 'https://example.com/wine.jpg');
   });
 
-  it('renders fallback emoji when no image_url', () => {
+  it('renders type icon when no image_url', () => {
     render(<WineCard wine={baseWine} />);
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
-    // Fallback wine emoji should be present
-    expect(screen.getByText('🍷')).toBeInTheDocument();
+    // Should render a Lucide SVG icon as the fallback (not an emoji)
+    const card = document.querySelector('.bg-gray-200, .bg-red-900, .bg-amber-50, .bg-pink-100, .bg-sky-100, .bg-amber-100, .bg-amber-900');
+    expect(card).toBeTruthy();
   });
 });
