@@ -1334,6 +1334,167 @@ describe('profile_ids filter on getWines', () => {
   });
 });
 
+// ─── Tasting notes ───────────────────────────────────────────────────────────
+
+describe('Tasting notes', () => {
+  let wineId: string;
+
+  beforeEach(async () => {
+    closeSqliteDb();
+    const wine = await sqliteAdapter.createWine({ name: 'Notes Test Wine' });
+    wineId = wine.id;
+  });
+
+  it('adds and retrieves a note', async () => {
+    const note = await sqliteAdapter.addWineNote(wineId, 'Dark fruit, firm tannins.');
+    expect(note.id).toBeDefined();
+    expect(note.wine_id).toBe(wineId);
+    expect(note.note).toBe('Dark fruit, firm tannins.');
+    expect(note.created_at).toBeDefined();
+
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes.length).toBe(1);
+    expect(notes[0].note).toBe('Dark fruit, firm tannins.');
+  });
+
+  it('stores optional tasted_at date', async () => {
+    await sqliteAdapter.addWineNote(wineId, 'Complex finish.', '2025-12-25');
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes[0].tasted_at).toBe('2025-12-25');
+  });
+
+  it('note without tasted_at has null/undefined tasted_at', async () => {
+    await sqliteAdapter.addWineNote(wineId, 'Quick note');
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes[0].tasted_at ?? null).toBeNull();
+  });
+
+  it('returns notes newest first', async () => {
+    await sqliteAdapter.addWineNote(wineId, 'First note');
+    await new Promise(r => setTimeout(r, 5));
+    await sqliteAdapter.addWineNote(wineId, 'Second note');
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes[0].note).toBe('Second note');
+    expect(notes[1].note).toBe('First note');
+  });
+
+  it('multiple notes accumulate', async () => {
+    await sqliteAdapter.addWineNote(wineId, 'Note 1');
+    await sqliteAdapter.addWineNote(wineId, 'Note 2');
+    await sqliteAdapter.addWineNote(wineId, 'Note 3');
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes.length).toBe(3);
+  });
+
+  it('deletes a note', async () => {
+    const note = await sqliteAdapter.addWineNote(wineId, 'To delete');
+    await sqliteAdapter.deleteWineNote(note.id);
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes.find(n => n.id === note.id)).toBeUndefined();
+  });
+
+  it('deleting one note does not affect others', async () => {
+    const n1 = await sqliteAdapter.addWineNote(wineId, 'Keep this');
+    const n2 = await sqliteAdapter.addWineNote(wineId, 'Delete this');
+    await sqliteAdapter.deleteWineNote(n2.id);
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes.length).toBe(1);
+    expect(notes[0].id).toBe(n1.id);
+  });
+
+  it('notes cascade-delete when wine is deleted', async () => {
+    await sqliteAdapter.addWineNote(wineId, 'Will be gone');
+    await sqliteAdapter.deleteWine(wineId);
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes).toEqual([]);
+  });
+
+  it('returns empty array for wine with no notes', async () => {
+    const notes = await sqliteAdapter.getWineNotes(wineId);
+    expect(notes).toEqual([]);
+  });
+
+  it('notes are isolated per wine', async () => {
+    const wine2 = await sqliteAdapter.createWine({ name: 'Other Wine' });
+    await sqliteAdapter.addWineNote(wineId, 'Wine 1 note');
+    await sqliteAdapter.addWineNote(wine2.id, 'Wine 2 note');
+
+    const notes1 = await sqliteAdapter.getWineNotes(wineId);
+    const notes2 = await sqliteAdapter.getWineNotes(wine2.id);
+    expect(notes1.length).toBe(1);
+    expect(notes2.length).toBe(1);
+    expect(notes1[0].note).toBe('Wine 1 note');
+    expect(notes2[0].note).toBe('Wine 2 note');
+  });
+});
+
+// ─── Drink status filter ──────────────────────────────────────────────────────
+
+describe('drink_status filter in getWines', () => {
+  const CURRENT_YEAR = new Date().getFullYear();
+
+  beforeEach(() => closeSqliteDb());
+
+  it('past_peak filter returns only wines past their drink_by_year', async () => {
+    await sqliteAdapter.createWine({ name: 'Past Peak', drink_by_year: CURRENT_YEAR - 1 });
+    await sqliteAdapter.createWine({ name: 'In Window', drink_from_year: CURRENT_YEAR - 2, drink_by_year: CURRENT_YEAR + 5 });
+    await sqliteAdapter.createWine({ name: 'Too Young', drink_from_year: CURRENT_YEAR + 3 });
+    await sqliteAdapter.createWine({ name: 'No Window' });
+
+    const results = await sqliteAdapter.getWines({ drink_status: 'past_peak' });
+    expect(results.some(w => w.name === 'Past Peak')).toBe(true);
+    expect(results.every(w => w.name === 'Past Peak')).toBe(true);
+  });
+
+  it('too_young filter returns only wines with drink_from_year in the future', async () => {
+    await sqliteAdapter.createWine({ name: 'Too Young A', drink_from_year: CURRENT_YEAR + 5 });
+    await sqliteAdapter.createWine({ name: 'Too Young B', drink_from_year: CURRENT_YEAR + 1 });
+    await sqliteAdapter.createWine({ name: 'In Window', drink_from_year: CURRENT_YEAR - 1, drink_by_year: CURRENT_YEAR + 5 });
+    await sqliteAdapter.createWine({ name: 'Past Peak', drink_by_year: CURRENT_YEAR - 1 });
+
+    const results = await sqliteAdapter.getWines({ drink_status: 'too_young' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Too Young A');
+    expect(names).toContain('Too Young B');
+    expect(names).not.toContain('In Window');
+    expect(names).not.toContain('Past Peak');
+  });
+
+  it('in_window filter returns wines within their drinking window', async () => {
+    await sqliteAdapter.createWine({ name: 'In Window', drink_from_year: CURRENT_YEAR - 1, drink_by_year: CURRENT_YEAR + 5 });
+    await sqliteAdapter.createWine({ name: 'Past Peak', drink_by_year: CURRENT_YEAR - 1 });
+    await sqliteAdapter.createWine({ name: 'Too Young', drink_from_year: CURRENT_YEAR + 3 });
+    await sqliteAdapter.createWine({ name: 'No Window' });
+
+    const results = await sqliteAdapter.getWines({ drink_status: 'in_window' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('In Window');
+    expect(names).not.toContain('Past Peak');
+    expect(names).not.toContain('Too Young');
+    expect(names).not.toContain('No Window');
+  });
+
+  it('in_window includes wines with only drink_by_year set (no drink_from_year)', async () => {
+    await sqliteAdapter.createWine({ name: 'By Year Only', drink_by_year: CURRENT_YEAR + 3 });
+    const results = await sqliteAdapter.getWines({ drink_status: 'in_window' });
+    expect(results.some(w => w.name === 'By Year Only')).toBe(true);
+  });
+
+  it('past_peak excludes wines with no drink_by_year', async () => {
+    await sqliteAdapter.createWine({ name: 'No Window Wine' });
+    const results = await sqliteAdapter.getWines({ drink_status: 'past_peak' });
+    expect(results.some(w => w.name === 'No Window Wine')).toBe(false);
+  });
+
+  it('drink_status combines with wine_type filter', async () => {
+    await sqliteAdapter.createWine({ name: 'Past Peak Red', wine_type: 'red', drink_by_year: CURRENT_YEAR - 1 });
+    await sqliteAdapter.createWine({ name: 'Past Peak White', wine_type: 'white', drink_by_year: CURRENT_YEAR - 1 });
+    const results = await sqliteAdapter.getWines({ drink_status: 'past_peak', wine_type: 'red' });
+    expect(results.some(w => w.name === 'Past Peak Red')).toBe(true);
+    expect(results.some(w => w.name === 'Past Peak White')).toBe(false);
+  });
+});
+
 // ─── Wine facets ─────────────────────────────────────────────────────────────
 
 describe('getWineFacets', () => {
