@@ -33,15 +33,33 @@ export interface Profile {
   user_id: string;
   name: string;
   description?: string;
+  group_name?: string;
   created_at: string;
   updated_at: string;
+}
+
+// A named physical location (rack, fridge, shelf) with optional capacity.
+// Rows in cellar_inventory reference these by name (within the same profile).
+// Bottles with location='' are "unlocated" — received but not yet placed.
+export interface Location {
+  id: string;
+  profile_id: string;
+  name: string;
+  group_name?: string;
+  max_capacity?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  // Computed fields (populated by getLocations join)
+  current_quantity?: number;
+  available_capacity?: number;
 }
 
 export interface CellarInventory {
   id: string;
   wine_id: string;
   profile_id: string;
-  location: string;
+  location: string;  // '' = unlocated
   quantity: number;
   purchase_price?: number;
   purchase_date?: string;
@@ -74,12 +92,14 @@ export interface WineSearchParams {
   vintage_year?: number;
   producer?: string;
   profile_id?: string;
+  // Comma-separated profile IDs — filters to wines in those profiles' inventories
+  profile_ids?: string;
 }
 
 export interface AddBottleInput {
   wine_id: string;
   profile_id: string;
-  location: string;
+  location?: string;  // undefined/empty = unlocated (stored as '')
   quantity?: number;
   purchase_price?: number;
   purchase_date?: string;
@@ -99,6 +119,27 @@ export interface MoveBottleInput {
   notes?: string;
 }
 
+// One item in a bulk scan batch — after barcode lookup enrichment.
+export interface BulkScanItem {
+  barcode: string;
+  quantity: number;
+  wine_id?: string;        // set when the barcode already exists in the DB
+  name?: string;
+  producer?: string;
+  vintage_year?: number;
+  variety?: string;
+  wine_type?: WineType;
+  region?: string;
+  appellation?: string;
+  country?: string;
+  description?: string;
+  average_price?: number;
+  purchase_price?: number;       // per-item override; pre-populated from average_price
+  source?: 'database' | 'openfoodfacts' | 'gemini-batch' | 'manual';
+  found?: boolean;
+  confidence?: number;
+}
+
 export interface DbAdapter {
   // Wines
   getWines(params: WineSearchParams): Promise<Wine[]>;
@@ -114,6 +155,12 @@ export interface DbAdapter {
   createProfile(data: Omit<Profile, 'id' | 'created_at' | 'updated_at'>): Promise<Profile>;
   updateProfile(id: string, userId: string, data: Partial<Omit<Profile, 'id' | 'created_at' | 'updated_at'>>): Promise<Profile>;
   deleteProfile(id: string, userId: string): Promise<void>;
+
+  // Locations
+  getLocations(profileId: string): Promise<Location[]>;
+  createLocation(data: Omit<Location, 'id' | 'created_at' | 'updated_at' | 'current_quantity' | 'available_capacity'>): Promise<Location>;
+  updateLocation(id: string, data: Partial<Pick<Location, 'name' | 'group_name' | 'max_capacity' | 'notes'>>): Promise<Location>;
+  deleteLocation(id: string): Promise<void>;
 
   // Cellar inventory
   getCellarInventory(profileId: string, userId: string): Promise<CellarInventory[]>;

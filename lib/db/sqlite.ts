@@ -5,6 +5,7 @@ import type {
   DbAdapter,
   Wine,
   Profile,
+  Location,
   CellarInventory,
   BottleTransaction,
   WineSearchParams,
@@ -34,6 +35,9 @@ function openDb(resolvedPath: string): Database.Database {
   conn.pragma('temp_store = MEMORY');     // temp tables and indices stay in RAM
   conn.pragma('mmap_size = 268435456');  // 256 MB memory-mapped reads
   conn.exec(SCHEMA);
+  // Idempotent column migrations — ignored if column already exists
+  try { conn.exec('ALTER TABLE locations ADD COLUMN group_name TEXT'); } catch {}
+  try { conn.exec('ALTER TABLE profiles ADD COLUMN group_name TEXT'); } catch {}
   return conn;
 }
 
@@ -57,8 +61,9 @@ function nullify(obj: Record<string, unknown>, keys: readonly string[]): Record<
 }
 
 const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'barcode', 'image_url', 'created_at', 'updated_at'] as const;
-const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'created_at', 'updated_at'] as const;
+const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'group_name', 'created_at', 'updated_at'] as const;
 const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
+const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'created_at', 'updated_at'] as const;
 
 export function closeSqliteDb(): void {
   if (memoryDb) { memoryDb.close(); memoryDb = null; }
@@ -73,22 +78,34 @@ export const sqliteAdapter: DbAdapter = {
     const conditions: string[] = [];
     const values: unknown[] = [];
 
+    const profileIds = params.profile_ids
+      ? params.profile_ids.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
     if (params.query) {
       conditions.push(
-        "(name LIKE ? OR producer LIKE ? OR variety LIKE ? OR region LIKE ? OR appellation LIKE ? OR country LIKE ?)"
+        "(w.name LIKE ? OR w.producer LIKE ? OR w.variety LIKE ? OR w.region LIKE ? OR w.appellation LIKE ? OR w.country LIKE ?)"
       );
       const q = `%${params.query}%`;
       values.push(q, q, q, q, q, q);
     }
-    if (params.variety) { conditions.push('variety = ?'); values.push(params.variety); }
-    if (params.wine_type) { conditions.push('wine_type = ?'); values.push(params.wine_type); }
-    if (params.country) { conditions.push('country = ?'); values.push(params.country); }
-    if (params.region) { conditions.push('region = ?'); values.push(params.region); }
-    if (params.vintage_year) { conditions.push('vintage_year = ?'); values.push(params.vintage_year); }
-    if (params.producer) { conditions.push('producer LIKE ?'); values.push(`%${params.producer}%`); }
+    if (params.variety) { conditions.push('w.variety = ?'); values.push(params.variety); }
+    if (params.wine_type) { conditions.push('w.wine_type = ?'); values.push(params.wine_type); }
+    if (params.country) { conditions.push('w.country = ?'); values.push(params.country); }
+    if (params.region) { conditions.push('w.region = ?'); values.push(params.region); }
+    if (params.vintage_year) { conditions.push('w.vintage_year = ?'); values.push(params.vintage_year); }
+    if (params.producer) { conditions.push('w.producer LIKE ?'); values.push(`%${params.producer}%`); }
+
+    if (profileIds.length > 0) {
+      const placeholders = profileIds.map(() => '?').join(', ');
+      conditions.push(
+        `EXISTS (SELECT 1 FROM cellar_inventory ci WHERE ci.wine_id = w.id AND ci.profile_id IN (${placeholders}) AND ci.quantity > 0)`
+      );
+      values.push(...profileIds);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT * FROM wines ${where} ORDER BY name ASC`;
+    const sql = `SELECT DISTINCT w.* FROM wines w ${where} ORDER BY w.name ASC`;
     return d.prepare(sql).all(...values) as Wine[];
   },
 
@@ -147,8 +164,8 @@ export const sqliteAdapter: DbAdapter = {
     const now = new Date().toISOString();
     const profile: Profile = { ...data, id: generateId(), created_at: now, updated_at: now };
     d.prepare(`
-      INSERT INTO profiles (id, user_id, name, description, created_at, updated_at)
-      VALUES (@id, @user_id, @name, @description, @created_at, @updated_at)
+      INSERT INTO profiles (id, user_id, name, description, group_name, created_at, updated_at)
+      VALUES (@id, @user_id, @name, @description, @group_name, @created_at, @updated_at)
     `).run(nullify(profile as unknown as Record<string, unknown>, PROFILE_COLS));
     return profile;
   },
@@ -159,7 +176,7 @@ export const sqliteAdapter: DbAdapter = {
     if (!existing) throw new Error(`Profile ${id} not found`);
     const updated: Profile = { ...existing, ...data, id, updated_at: new Date().toISOString() };
     d.prepare(`
-      UPDATE profiles SET name=@name, description=@description, updated_at=@updated_at
+      UPDATE profiles SET name=@name, description=@description, group_name=@group_name, updated_at=@updated_at
       WHERE id=@id AND user_id=@user_id
     `).run(nullify(updated as unknown as Record<string, unknown>, PROFILE_COLS));
     return updated;
@@ -207,9 +224,11 @@ export const sqliteAdapter: DbAdapter = {
 
   async addBottle(input: AddBottleInput, _userId: string): Promise<CellarInventory> {
     const d = getDb();
+    // '' = unlocated sentinel; normalise undefined/null to empty string
+    const loc = input.location?.trim() ?? '';
     const existing = d.prepare(`
       SELECT * FROM cellar_inventory WHERE wine_id = ? AND profile_id = ? AND location = ?
-    `).get(input.wine_id, input.profile_id, input.location) as CellarInventory | undefined;
+    `).get(input.wine_id, input.profile_id, loc) as CellarInventory | undefined;
 
     const now = new Date().toISOString();
     const qty = input.quantity ?? 1;
@@ -225,7 +244,7 @@ export const sqliteAdapter: DbAdapter = {
       d.prepare(`
         INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, created_at)
         VALUES (?, ?, ?, ?, 'add', ?, ?, ?)
-      `).run(generateId(), input.wine_id, input.profile_id, existing.id, qty, input.location, now);
+      `).run(generateId(), input.wine_id, input.profile_id, existing.id, qty, loc, now);
 
       return updated;
     }
@@ -234,7 +253,7 @@ export const sqliteAdapter: DbAdapter = {
       id: generateId(),
       wine_id: input.wine_id,
       profile_id: input.profile_id,
-      location: input.location,
+      location: loc,
       quantity: qty,
       purchase_price: input.purchase_price,
       purchase_date: input.purchase_date,
@@ -251,7 +270,7 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO bottle_transactions (id, wine_id, profile_id, cellar_inventory_id, transaction_type, quantity, location, created_at)
       VALUES (?, ?, ?, ?, 'add', ?, ?, ?)
-    `).run(generateId(), input.wine_id, input.profile_id, inventory.id, qty, input.location, now);
+    `).run(generateId(), input.wine_id, input.profile_id, inventory.id, qty, loc || null, now);
 
     return inventory;
   },
@@ -338,6 +357,53 @@ export const sqliteAdapter: DbAdapter = {
         input.quantity, `${source.location} → ${newLoc}`, input.notes ?? null, now,
       );
     })();
+  },
+
+  // --- Locations ---
+
+  async getLocations(profileId: string): Promise<Location[]> {
+    const rows = getDb().prepare(`
+      SELECT l.*,
+             COALESCE(SUM(CASE WHEN ci.quantity > 0 THEN ci.quantity ELSE 0 END), 0) AS current_quantity
+      FROM locations l
+      LEFT JOIN cellar_inventory ci
+        ON ci.profile_id = l.profile_id AND ci.location = l.name
+      WHERE l.profile_id = ?
+      GROUP BY l.id
+      ORDER BY l.name ASC
+    `).all(profileId) as (Location & { current_quantity: number })[];
+
+    return rows.map(r => ({
+      ...r,
+      available_capacity: r.max_capacity != null ? Math.max(0, r.max_capacity - r.current_quantity) : undefined,
+    }));
+  },
+
+  async createLocation(data): Promise<Location> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const location: Location = { ...data, id: generateId(), created_at: now, updated_at: now };
+    d.prepare(`
+      INSERT INTO locations (id, profile_id, name, group_name, max_capacity, notes, created_at, updated_at)
+      VALUES (@id, @profile_id, @name, @group_name, @max_capacity, @notes, @created_at, @updated_at)
+    `).run(nullify(location as unknown as Record<string, unknown>, LOCATION_COLS));
+    return location;
+  },
+
+  async updateLocation(id, data): Promise<Location> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM locations WHERE id = ?').get(id) as Location | undefined;
+    if (!existing) throw new Error(`Location ${id} not found`);
+    const updated: Location = { ...existing, ...data, id, updated_at: new Date().toISOString() };
+    d.prepare(`
+      UPDATE locations SET name=@name, group_name=@group_name, max_capacity=@max_capacity, notes=@notes, updated_at=@updated_at
+      WHERE id=@id
+    `).run(nullify(updated as unknown as Record<string, unknown>, LOCATION_COLS));
+    return updated;
+  },
+
+  async deleteLocation(id): Promise<void> {
+    getDb().prepare('DELETE FROM locations WHERE id = ?').run(id);
   },
 
   // --- Transactions ---

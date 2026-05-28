@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await getDb();
-    const profile = await db.createProfile({ user_id: userId, name: body.name.trim(), description: body.description });
+    const profile = await db.createProfile({ user_id: userId, name: body.name.trim(), description: body.description, group_name: body.group_name || undefined });
     return NextResponse.json(profile, { status: 201 });
   } catch (err) {
     console.error('[POST /api/profiles]', err);
