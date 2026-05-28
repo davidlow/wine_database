@@ -458,6 +458,9 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
 
   // ── Stats ───────────────────────────────────────────────────────────────────
   const totalBottles = inventory.reduce((s, i) => s + i.quantity, 0);
+  const totalCapacity = registeredLocations
+    .filter(l => l.max_capacity != null)
+    .reduce((s, l) => s + (l.max_capacity ?? 0), 0);
   const unlocatedItems = inventory.filter(i => i.location === '');
   const unlocatedBottles = unlocatedItems.reduce((s, i) => s + i.quantity, 0);
 
@@ -712,20 +715,28 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
     <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link href="/profiles" className="text-muted-foreground hover:text-foreground">
+        <Link href="/profiles" className="text-muted-foreground hover:text-foreground" title="Switch Cellar">
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-xl font-bold">{profile.name}</h2>
           {profile.description && <p className="text-sm text-muted-foreground">{profile.description}</p>}
         </div>
+        <Link
+          href="/profiles"
+          className="text-xs text-muted-foreground hover:text-foreground border rounded px-2 py-1 hover:bg-accent transition-colors shrink-0"
+        >
+          Switch Cellar
+        </Link>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border bg-card px-4 py-3 text-center">
-          <p className="text-2xl font-bold">{totalBottles}</p>
-          <p className="text-xs text-muted-foreground">Total Bottles</p>
+          <p className="text-2xl font-bold tabular-nums">
+            {totalCapacity > 0 ? `${totalBottles}/${totalCapacity}` : totalBottles}
+          </p>
+          <p className="text-xs text-muted-foreground">Bottles{totalCapacity > 0 ? ' / Cap.' : ''}</p>
         </div>
         <div className="rounded-lg border bg-card px-4 py-3 text-center">
           <p className="text-2xl font-bold">{allLocations.length}</p>

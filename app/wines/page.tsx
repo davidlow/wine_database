@@ -1,13 +1,14 @@
 'use client';
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useWineSearch } from '@/hooks/useWineSearch';
 import { useProfile } from '@/hooks/useProfile';
 import WineCard from '@/components/WineCard';
 import WineSearch from '@/components/WineSearch';
+import { cn } from '@/lib/utils';
 
 function WinesContent() {
   const searchParams = useSearchParams();
@@ -23,13 +24,18 @@ function WinesContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileIds]);
 
-  const activeProfileNames = profileIds
-    ? profileIds.split(',').map(id => profiles.find(p => p.id === id)?.name ?? id)
-    : [];
+  const toggleProfile = useCallback((profileId: string) => {
+    const current = new Set((profileIds ?? '').split(',').filter(Boolean));
+    if (current.has(profileId)) {
+      current.delete(profileId);
+    } else {
+      current.add(profileId);
+    }
+    const next = [...current].join(',');
+    router.push(next ? `/wines?profile_ids=${next}` : '/wines');
+  }, [profileIds, router]);
 
-  const clearProfileFilter = () => {
-    router.push('/wines');
-  };
+  const activeSet = new Set((profileIds ?? '').split(',').filter(Boolean));
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
@@ -44,22 +50,35 @@ function WinesContent() {
         </Link>
       </div>
 
-      {/* Active cellar filter */}
-      {activeProfileNames.length > 0 && (
+      {/* Cellar filter chips — always visible when profiles exist */}
+      {profiles.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground">Showing inventory from:</span>
-          {activeProfileNames.map(name => (
-            <span key={name} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
-              {name}
-            </span>
-          ))}
+          <span className="text-xs text-muted-foreground shrink-0">Cellar:</span>
           <button
-            onClick={clearProfileFilter}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => router.push('/wines')}
+            className={cn(
+              'text-xs px-3 py-1 rounded-full border transition-colors',
+              activeSet.size === 0
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-background hover:bg-accent border-input text-muted-foreground'
+            )}
           >
-            <X className="h-3 w-3" />
-            Clear filter
+            All
           </button>
+          {profiles.map(p => (
+            <button
+              key={p.id}
+              onClick={() => toggleProfile(p.id)}
+              className={cn(
+                'text-xs px-3 py-1 rounded-full border transition-colors',
+                activeSet.has(p.id)
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background hover:bg-accent border-input text-muted-foreground'
+              )}
+            >
+              {p.name}
+            </button>
+          ))}
         </div>
       )}
 
@@ -80,12 +99,12 @@ function WinesContent() {
       ) : wines.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <p className="text-sm">
-            {activeProfileNames.length > 0
+            {activeSet.size > 0
               ? 'No wines found in the selected cellar(s).'
               : 'No wines found.'}
           </p>
-          {activeProfileNames.length > 0 ? (
-            <button onClick={clearProfileFilter} className="text-primary text-sm underline mt-2">
+          {activeSet.size > 0 ? (
+            <button onClick={() => router.push('/wines')} className="text-primary text-sm underline mt-2">
               Browse full catalog
             </button>
           ) : (
