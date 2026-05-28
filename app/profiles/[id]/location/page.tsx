@@ -129,10 +129,11 @@ function LocationPageContent({ profileId }: { profileId: string }) {
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground">
+                  <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
                     {wine?.producer && <span>{wine.producer}</span>}
                     {wine?.vintage_year && <span>{wine.vintage_year}</span>}
                     {wine?.wine_type && <span className="capitalize">{wine.wine_type}</span>}
+                    {wine?.variety && <span>🍇 {wine.variety}</span>}
                   </div>
                 </div>
                 <span className="text-sm font-semibold ml-3 shrink-0">{item.quantity} btl</span>

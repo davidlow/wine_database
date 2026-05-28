@@ -33,6 +33,28 @@ function WineTypeIcon({ type }: { type?: WineType | null }) {
 
 export default function WineCard({ wine, inventory, href, onAdd }: Props) {
   const totalBottles = inventory?.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+
+  // Right column: type badge stacked above the add button.
+  // Rendered inside the Link when href is set, so onAdd uses stopPropagation.
+  const rightCol = (wine.wine_type || onAdd) ? (
+    <div className="flex flex-col items-end gap-2 shrink-0 self-start">
+      {wine.wine_type && (
+        <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap', wineTypeColor(wine.wine_type))}>
+          {wineTypeLabel(wine.wine_type)}
+        </span>
+      )}
+      {onAdd && (
+        <button
+          onClick={e => { e.stopPropagation(); e.preventDefault(); onAdd(); }}
+          title="Quick-add bottle"
+          className="h-7 w-7 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center shadow-sm transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  ) : null;
+
   const card = (
     <div className="group flex gap-3 rounded-lg border bg-card p-3 hover:shadow-md transition-shadow">
       {wine.image_url ? (
@@ -43,32 +65,31 @@ export default function WineCard({ wine, inventory, href, onAdd }: Props) {
         <WineTypeIcon type={wine.wine_type} />
       )}
       <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
-            {wine.name}
-          </h3>
-          {wine.wine_type && (
-            <span className={cn('shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium', wineTypeColor(wine.wine_type))}>
-              {wineTypeLabel(wine.wine_type)}
-            </span>
-          )}
-        </div>
+        <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors pr-1">
+          {wine.name}
+        </h3>
 
         {wine.producer && (
           <p className="text-xs text-muted-foreground mt-0.5 truncate">{wine.producer}</p>
         )}
 
-        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-x-3 gap-y-0.5 mt-1.5 text-xs text-muted-foreground flex-wrap">
           {wine.vintage_year && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 shrink-0">
               <Calendar className="h-3 w-3" />
               {wine.vintage_year}
             </span>
           )}
           {(wine.region || wine.country) && (
-            <span className="flex items-center gap-1 truncate">
+            <span className="flex items-center gap-1">
               <MapPin className="h-3 w-3 shrink-0" />
               <span className="truncate">{[wine.region, wine.country].filter(Boolean).join(', ')}</span>
+            </span>
+          )}
+          {wine.variety && (
+            <span className="flex items-center gap-1">
+              <span className="text-sm leading-none">🍇</span>
+              <span className="truncate">{wine.variety}</span>
             </span>
           )}
         </div>
@@ -87,22 +108,11 @@ export default function WineCard({ wine, inventory, href, onAdd }: Props) {
           )}
         </div>
       </div>
+
+      {rightCol}
     </div>
   );
 
-  const inner = href ? <Link href={href} className="block">{card}</Link> : card;
-
-  if (!onAdd) return inner;
-  return (
-    <div className="relative">
-      {inner}
-      <button
-        onClick={e => { e.stopPropagation(); e.preventDefault(); onAdd(); }}
-        title="Quick-add bottle"
-        className="absolute top-2 right-2 h-7 w-7 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center shadow-sm transition-colors z-10"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
-    </div>
-  );
+  if (href) return <Link href={href} className="block">{card}</Link>;
+  return card;
 }
