@@ -778,3 +778,592 @@ describe('Cellar inventory', () => {
     ).rejects.toThrow();
   });
 });
+
+// ─── Drink window fields ──────────────────────────────────────────────────────
+
+describe('Drink window fields', () => {
+  const CURRENT_YEAR = new Date().getFullYear();
+
+  it('persists drink_from_year and drink_by_year on create', async () => {
+    const wine = await sqliteAdapter.createWine({
+      name: 'Baroло Riserva',
+      drink_from_year: CURRENT_YEAR + 5,
+      drink_by_year: CURRENT_YEAR + 20,
+    });
+
+    const fetched = await sqliteAdapter.getWineById(wine.id);
+    expect(fetched!.drink_from_year).toBe(CURRENT_YEAR + 5);
+    expect(fetched!.drink_by_year).toBe(CURRENT_YEAR + 20);
+  });
+
+  it('drink_from_year and drink_by_year default to null when omitted', async () => {
+    const wine = await sqliteAdapter.createWine({ name: 'No Window Wine' });
+    const fetched = await sqliteAdapter.getWineById(wine.id);
+    expect(fetched!.drink_from_year).toBeFalsy();
+    expect(fetched!.drink_by_year).toBeFalsy();
+  });
+
+  it('updates drink_from_year and drink_by_year', async () => {
+    const wine = await sqliteAdapter.createWine({
+      name: 'Window Update Wine',
+      drink_from_year: 2020,
+      drink_by_year: 2030,
+    });
+
+    const updated = await sqliteAdapter.updateWine(wine.id, {
+      drink_from_year: 2022,
+      drink_by_year: 2035,
+    });
+
+    expect(updated.drink_from_year).toBe(2022);
+    expect(updated.drink_by_year).toBe(2035);
+
+    const fetched = await sqliteAdapter.getWineById(wine.id);
+    expect(fetched!.drink_from_year).toBe(2022);
+    expect(fetched!.drink_by_year).toBe(2035);
+  });
+
+  it('update preserves drink window when other fields change', async () => {
+    const wine = await sqliteAdapter.createWine({
+      name: 'Preserve Window',
+      drink_from_year: CURRENT_YEAR + 3,
+      drink_by_year: CURRENT_YEAR + 15,
+    });
+
+    const updated = await sqliteAdapter.updateWine(wine.id, { name: 'Updated Name' });
+    expect(updated.drink_from_year).toBe(CURRENT_YEAR + 3);
+    expect(updated.drink_by_year).toBe(CURRENT_YEAR + 15);
+  });
+
+  it('getCellarInventory includes drink_from_year and drink_by_year on wine sub-object', async () => {
+    const userId = 'dw-test-user';
+    const wine = await sqliteAdapter.createWine({
+      name: 'Cellar Window Wine',
+      drink_from_year: CURRENT_YEAR + 2,
+      drink_by_year: CURRENT_YEAR + 10,
+    });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'DW Cellar' });
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack A', quantity: 1 }, userId);
+
+    const inv = await sqliteAdapter.getCellarInventory(profile.id, userId);
+    const item = inv.find(i => i.wine_id === wine.id);
+    expect(item!.wine).toBeDefined();
+    expect(item!.wine!.drink_from_year).toBe(CURRENT_YEAR + 2);
+    expect(item!.wine!.drink_by_year).toBe(CURRENT_YEAR + 10);
+  });
+
+  it('identifies a too-young wine (drink_from_year > current year)', async () => {
+    const userId = 'dw-young-user';
+    const wine = await sqliteAdapter.createWine({
+      name: 'Too Young Wine',
+      drink_from_year: CURRENT_YEAR + 5,
+      drink_by_year: CURRENT_YEAR + 20,
+    });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Young Cellar' });
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack B', quantity: 2 }, userId);
+
+    const inv = await sqliteAdapter.getCellarInventory(profile.id, userId);
+    const item = inv.find(i => i.wine_id === wine.id);
+    expect(item!.wine!.drink_from_year! > CURRENT_YEAR).toBe(true);
+  });
+
+  it('identifies a past-peak wine (drink_by_year < current year)', async () => {
+    const userId = 'dw-peak-user';
+    const wine = await sqliteAdapter.createWine({
+      name: 'Past Peak Wine',
+      drink_from_year: CURRENT_YEAR - 10,
+      drink_by_year: CURRENT_YEAR - 1,
+    });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Peak Cellar' });
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack C', quantity: 1 }, userId);
+
+    const inv = await sqliteAdapter.getCellarInventory(profile.id, userId);
+    const item = inv.find(i => i.wine_id === wine.id);
+    expect(item!.wine!.drink_by_year! < CURRENT_YEAR).toBe(true);
+  });
+
+  it('identifies a wine in its drinking window', async () => {
+    const userId = 'dw-ready-user';
+    const wine = await sqliteAdapter.createWine({
+      name: 'Ready To Drink Wine',
+      drink_from_year: CURRENT_YEAR - 2,
+      drink_by_year: CURRENT_YEAR + 5,
+    });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Ready Cellar' });
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profile.id, location: 'Rack D', quantity: 3 }, userId);
+
+    const inv = await sqliteAdapter.getCellarInventory(profile.id, userId);
+    const item = inv.find(i => i.wine_id === wine.id);
+    const fromYear = item!.wine!.drink_from_year!;
+    const byYear = item!.wine!.drink_by_year!;
+    expect(fromYear <= CURRENT_YEAR && byYear >= CURRENT_YEAR).toBe(true);
+  });
+});
+
+// ─── Profile group_name ──────────────────────────────────────────────────────
+
+describe('Profile group_name', () => {
+  const userId = 'group-test-user';
+
+  it('creates profile with group_name', async () => {
+    const profile = await sqliteAdapter.createProfile({
+      user_id: userId,
+      name: 'Home Cellar',
+      group_name: 'Production',
+    });
+
+    const fetched = await sqliteAdapter.getProfileById(profile.id, userId);
+    expect(fetched!.group_name).toBe('Production');
+  });
+
+  it('profile without group_name has falsy group_name', async () => {
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Ungrouped' });
+    const fetched = await sqliteAdapter.getProfileById(profile.id, userId);
+    expect(fetched!.group_name).toBeFalsy();
+  });
+
+  it('updates group_name on profile', async () => {
+    const profile = await sqliteAdapter.createProfile({
+      user_id: userId,
+      name: 'Vacation Cellar',
+      group_name: 'Old Group',
+    });
+
+    const updated = await sqliteAdapter.updateProfile(profile.id, userId, { group_name: 'New Group' });
+    expect(updated.group_name).toBe('New Group');
+
+    const fetched = await sqliteAdapter.getProfileById(profile.id, userId);
+    expect(fetched!.group_name).toBe('New Group');
+  });
+
+  it('preserves group_name through unrelated updates', async () => {
+    const profile = await sqliteAdapter.createProfile({
+      user_id: userId,
+      name: 'Stable Group Cellar',
+      group_name: 'Stable Group',
+    });
+
+    const updated = await sqliteAdapter.updateProfile(profile.id, userId, { description: 'New desc' });
+    expect(updated.group_name).toBe('Stable Group');
+  });
+
+  it('can clear group_name by setting it to empty string', async () => {
+    const profile = await sqliteAdapter.createProfile({
+      user_id: userId,
+      name: 'Clear Group',
+      group_name: 'Some Group',
+    });
+
+    const updated = await sqliteAdapter.updateProfile(profile.id, userId, { group_name: '' });
+    const fetched = await sqliteAdapter.getProfileById(updated.id, userId);
+    expect(fetched!.group_name).toBeFalsy();
+  });
+
+  it('getProfiles returns group_name for all profiles', async () => {
+    await sqliteAdapter.createProfile({ user_id: userId, name: 'Group A1', group_name: 'Group A' });
+    await sqliteAdapter.createProfile({ user_id: userId, name: 'Group B1', group_name: 'Group B' });
+    await sqliteAdapter.createProfile({ user_id: userId, name: 'Ungrouped' });
+
+    const profiles = await sqliteAdapter.getProfiles(userId);
+    expect(profiles.some(p => p.group_name === 'Group A')).toBe(true);
+    expect(profiles.some(p => p.group_name === 'Group B')).toBe(true);
+    expect(profiles.some(p => !p.group_name)).toBe(true);
+  });
+});
+
+// ─── Location CRUD ───────────────────────────────────────────────────────────
+
+describe('Location CRUD', () => {
+  const userId = 'loc-test-user';
+  let profileId: string;
+
+  beforeEach(async () => {
+    closeSqliteDb();
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Location Test Cellar' });
+    profileId = profile.id;
+  });
+
+  it('creates and retrieves a location', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Rack A',
+    });
+
+    expect(loc.id).toBeDefined();
+    expect(loc.name).toBe('Rack A');
+    expect(loc.profile_id).toBe(profileId);
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    expect(locs.some(l => l.id === loc.id)).toBe(true);
+  });
+
+  it('persists all optional location fields', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Wine Fridge',
+      group_name: 'Kitchen',
+      max_capacity: 24,
+      notes: 'Temperature controlled',
+    });
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const found = locs.find(l => l.id === loc.id);
+    expect(found!.group_name).toBe('Kitchen');
+    expect(found!.max_capacity).toBe(24);
+    expect(found!.notes).toBe('Temperature controlled');
+  });
+
+  it('getLocations returns current_quantity of zero for empty location', async () => {
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Empty Rack', max_capacity: 12 });
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const loc = locs.find(l => l.name === 'Empty Rack');
+    expect(loc!.current_quantity).toBe(0);
+  });
+
+  it('getLocations tracks current_quantity as bottles are added', async () => {
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Filling Rack', max_capacity: 20 });
+    const wine = await sqliteAdapter.createWine({ name: 'Capacity Test Wine' });
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profileId, location: 'Filling Rack', quantity: 5 }, userId);
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const loc = locs.find(l => l.name === 'Filling Rack');
+    expect(loc!.current_quantity).toBe(5);
+  });
+
+  it('available_capacity decreases as bottles are added', async () => {
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Capacity Rack', max_capacity: 10 });
+    const wine = await sqliteAdapter.createWine({ name: 'Available Cap Wine' });
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profileId, location: 'Capacity Rack', quantity: 4 }, userId);
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const loc = locs.find(l => l.name === 'Capacity Rack');
+    expect(loc!.available_capacity).toBe(6);
+  });
+
+  it('available_capacity is undefined when max_capacity not set', async () => {
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Unlimited Rack' });
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const loc = locs.find(l => l.name === 'Unlimited Rack');
+    expect(loc!.available_capacity).toBeUndefined();
+  });
+
+  it('available_capacity floors at zero (overfill scenario)', async () => {
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Overfull Rack', max_capacity: 3 });
+    const wine = await sqliteAdapter.createWine({ name: 'Overfull Wine' });
+    // Add more bottles than capacity
+    await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: profileId, location: 'Overfull Rack', quantity: 5 }, userId);
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const loc = locs.find(l => l.name === 'Overfull Rack');
+    expect(loc!.available_capacity).toBe(0);
+  });
+
+  it('updates location name, group, capacity, and notes', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Old Name',
+      max_capacity: 10,
+    });
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, {
+      name: 'New Name',
+      group_name: 'Updated Group',
+      max_capacity: 20,
+      notes: 'New notes',
+    });
+
+    expect(updated.name).toBe('New Name');
+    expect(updated.group_name).toBe('Updated Group');
+    expect(updated.max_capacity).toBe(20);
+    expect(updated.notes).toBe('New notes');
+  });
+
+  it('updateLocation preserves unchanged fields', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Stable Rack',
+      group_name: 'Storage',
+      max_capacity: 15,
+    });
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, { notes: 'Just added a note' });
+    expect(updated.name).toBe('Stable Rack');
+    expect(updated.group_name).toBe('Storage');
+    expect(updated.max_capacity).toBe(15);
+  });
+
+  it('throws when updating non-existent location', async () => {
+    await expect(sqliteAdapter.updateLocation('nonexistent', { name: 'X' })).rejects.toThrow();
+  });
+
+  it('deletes a location', async () => {
+    const loc = await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Delete Me' });
+    await sqliteAdapter.deleteLocation(loc.id);
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    expect(locs.find(l => l.id === loc.id)).toBeUndefined();
+  });
+
+  it('getLocations returns sorted alphabetically by name', async () => {
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Rack Z' });
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Rack A' });
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Rack M' });
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const names = locs.map(l => l.name);
+    expect(names).toEqual([...names].sort());
+  });
+
+  it('locations are isolated per profile', async () => {
+    const profile2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Other Cellar' });
+    await sqliteAdapter.createLocation({ profile_id: profileId, name: 'My Rack' });
+    await sqliteAdapter.createLocation({ profile_id: profile2.id, name: 'Other Rack' });
+
+    const locs1 = await sqliteAdapter.getLocations(profileId);
+    const locs2 = await sqliteAdapter.getLocations(profile2.id);
+
+    expect(locs1.every(l => l.profile_id === profileId)).toBe(true);
+    expect(locs2.every(l => l.profile_id === profile2.id)).toBe(true);
+    expect(locs1.some(l => l.name === 'Other Rack')).toBe(false);
+  });
+});
+
+// ─── Unlocated bottles ───────────────────────────────────────────────────────
+
+describe('Unlocated bottles', () => {
+  const userId = 'unlocated-test-user';
+  let wineId: string;
+  let profileId: string;
+
+  beforeEach(async () => {
+    closeSqliteDb();
+    const wine = await sqliteAdapter.createWine({ name: 'Unlocated Wine' });
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Unlocated Cellar' });
+    wineId = wine.id;
+    profileId = profile.id;
+  });
+
+  it('stores bottles with empty string location', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: '', quantity: 2 },
+      userId
+    );
+    expect(item.location).toBe('');
+  });
+
+  it('normalises undefined location to empty string', async () => {
+    const item = await sqliteAdapter.addBottle(
+      { wine_id: wineId, profile_id: profileId, location: undefined as unknown as string, quantity: 1 },
+      userId
+    );
+    expect(item.location).toBe('');
+  });
+
+  it('unlocated bottles appear in getCellarInventory', async () => {
+    await sqliteAdapter.addBottle({ wine_id: wineId, profile_id: profileId, location: '', quantity: 3 }, userId);
+
+    const inv = await sqliteAdapter.getCellarInventory(profileId, userId);
+    const unlocated = inv.find(i => i.location === '' && i.wine_id === wineId);
+    expect(unlocated).toBeDefined();
+    expect(unlocated!.quantity).toBe(3);
+  });
+
+  it('aggregates additional bottles at empty-string location', async () => {
+    await sqliteAdapter.addBottle({ wine_id: wineId, profile_id: profileId, location: '', quantity: 2 }, userId);
+    const item = await sqliteAdapter.addBottle({ wine_id: wineId, profile_id: profileId, location: '', quantity: 3 }, userId);
+    expect(item.quantity).toBe(5);
+  });
+
+  it('unlocated and located entries are separate inventory rows', async () => {
+    const unlocated = await sqliteAdapter.addBottle({ wine_id: wineId, profile_id: profileId, location: '', quantity: 1 }, userId);
+    const located = await sqliteAdapter.addBottle({ wine_id: wineId, profile_id: profileId, location: 'Rack A', quantity: 2 }, userId);
+    expect(unlocated.id).not.toBe(located.id);
+
+    const inv = await sqliteAdapter.getCellarInventory(profileId, userId);
+    expect(inv.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ─── profile_ids filter ──────────────────────────────────────────────────────
+
+describe('profile_ids filter on getWines', () => {
+  const userId = 'pid-filter-user';
+
+  it('returns only wines in specified profile', async () => {
+    const p1 = await sqliteAdapter.createProfile({ user_id: userId, name: 'P1' });
+    const p2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'P2' });
+    const wine1 = await sqliteAdapter.createWine({ name: 'P1 Wine' });
+    const wine2 = await sqliteAdapter.createWine({ name: 'P2 Wine' });
+    await sqliteAdapter.addBottle({ wine_id: wine1.id, profile_id: p1.id, location: 'A', quantity: 1 }, userId);
+    await sqliteAdapter.addBottle({ wine_id: wine2.id, profile_id: p2.id, location: 'A', quantity: 1 }, userId);
+
+    const results = await sqliteAdapter.getWines({ profile_ids: p1.id });
+    const ids = results.map(w => w.id);
+    expect(ids).toContain(wine1.id);
+    expect(ids).not.toContain(wine2.id);
+  });
+
+  it('returns wines from multiple profiles when comma-separated', async () => {
+    const p1 = await sqliteAdapter.createProfile({ user_id: userId, name: 'MP1' });
+    const p2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'MP2' });
+    const wine1 = await sqliteAdapter.createWine({ name: 'Multi P1 Wine' });
+    const wine2 = await sqliteAdapter.createWine({ name: 'Multi P2 Wine' });
+    await sqliteAdapter.addBottle({ wine_id: wine1.id, profile_id: p1.id, location: 'B', quantity: 1 }, userId);
+    await sqliteAdapter.addBottle({ wine_id: wine2.id, profile_id: p2.id, location: 'B', quantity: 1 }, userId);
+
+    const results = await sqliteAdapter.getWines({ profile_ids: `${p1.id},${p2.id}` });
+    const ids = results.map(w => w.id);
+    expect(ids).toContain(wine1.id);
+    expect(ids).toContain(wine2.id);
+  });
+
+  it('excludes wines with zero quantity in the profile', async () => {
+    const p1 = await sqliteAdapter.createProfile({ user_id: userId, name: 'ZeroQ Profile' });
+    const wine = await sqliteAdapter.createWine({ name: 'Zero Qty Wine' });
+    const item = await sqliteAdapter.addBottle({ wine_id: wine.id, profile_id: p1.id, location: 'C', quantity: 1 }, userId);
+    await sqliteAdapter.removeBottle({ cellar_inventory_id: item.id, quantity: 1 }, userId);
+
+    const results = await sqliteAdapter.getWines({ profile_ids: p1.id });
+    expect(results.find(w => w.id === wine.id)).toBeUndefined();
+  });
+
+  it('profile_ids can be combined with wine_type filter', async () => {
+    const p1 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Mixed Profile' });
+    const redWine = await sqliteAdapter.createWine({ name: 'Mixed Red', wine_type: 'red' });
+    const whiteWine = await sqliteAdapter.createWine({ name: 'Mixed White', wine_type: 'white' });
+    await sqliteAdapter.addBottle({ wine_id: redWine.id, profile_id: p1.id, location: 'D', quantity: 1 }, userId);
+    await sqliteAdapter.addBottle({ wine_id: whiteWine.id, profile_id: p1.id, location: 'D', quantity: 1 }, userId);
+
+    const results = await sqliteAdapter.getWines({ profile_ids: p1.id, wine_type: 'red' });
+    const ids = results.map(w => w.id);
+    expect(ids).toContain(redWine.id);
+    expect(ids).not.toContain(whiteWine.id);
+  });
+});
+
+// ─── Wine facets ─────────────────────────────────────────────────────────────
+
+describe('getWineFacets', () => {
+  beforeEach(async () => {
+    closeSqliteDb();
+    // Seed a set of wines to test against
+    await sqliteAdapter.createWine({ name: 'W1', variety: 'Cabernet Sauvignon', country: 'USA', region: 'Napa Valley', producer: 'Stag\'s Leap', appellation: 'Oakville' });
+    await sqliteAdapter.createWine({ name: 'W2', variety: 'Merlot', country: 'France', region: 'Bordeaux', producer: 'Château Pétrus', appellation: 'Pomerol' });
+    await sqliteAdapter.createWine({ name: 'W3', variety: 'Chardonnay', country: 'France', region: 'Burgundy', producer: 'Louis Jadot', appellation: 'Meursault' });
+    await sqliteAdapter.createWine({ name: 'W4', variety: 'Cabernet Sauvignon', country: 'Australia', region: 'Barossa Valley', producer: 'Penfolds', appellation: 'Barossa' });
+    await sqliteAdapter.createWine({ name: 'W5', variety: 'Pinot Noir', country: 'USA', region: 'Willamette Valley' });
+  });
+
+  it('returns all distinct varieties when query is empty', async () => {
+    const result = await sqliteAdapter.getWineFacets('variety', '');
+    expect(result).toContain('Cabernet Sauvignon');
+    expect(result).toContain('Merlot');
+    expect(result).toContain('Chardonnay');
+    expect(result).toContain('Pinot Noir');
+    // Cabernet Sauvignon appears twice but should only return once
+    expect(result.filter(v => v === 'Cabernet Sauvignon').length).toBe(1);
+  });
+
+  it('filters varieties by partial match', async () => {
+    const result = await sqliteAdapter.getWineFacets('variety', 'cab');
+    expect(result).toContain('Cabernet Sauvignon');
+    expect(result).not.toContain('Merlot');
+    expect(result).not.toContain('Chardonnay');
+  });
+
+  it('returns distinct countries', async () => {
+    const result = await sqliteAdapter.getWineFacets('country', '');
+    expect(result).toContain('USA');
+    expect(result).toContain('France');
+    expect(result).toContain('Australia');
+    expect(result.filter(c => c === 'USA').length).toBe(1);
+  });
+
+  it('filters countries by partial match', async () => {
+    const result = await sqliteAdapter.getWineFacets('country', 'fra');
+    expect(result).toContain('France');
+    expect(result).not.toContain('USA');
+  });
+
+  it('returns distinct regions', async () => {
+    const result = await sqliteAdapter.getWineFacets('region', '');
+    expect(result).toContain('Napa Valley');
+    expect(result).toContain('Bordeaux');
+    expect(result).toContain('Burgundy');
+  });
+
+  it('filters regions by partial match', async () => {
+    const result = await sqliteAdapter.getWineFacets('region', 'valley');
+    expect(result.some(r => r.toLowerCase().includes('valley'))).toBe(true);
+    expect(result).not.toContain('Bordeaux');
+  });
+
+  it('returns distinct producers', async () => {
+    const result = await sqliteAdapter.getWineFacets('producer', '');
+    expect(result).toContain('Penfolds');
+    expect(result).toContain('Louis Jadot');
+  });
+
+  it('filters producers by partial match', async () => {
+    const result = await sqliteAdapter.getWineFacets('producer', 'jadot');
+    expect(result).toContain('Louis Jadot');
+    expect(result).not.toContain('Penfolds');
+  });
+
+  it('returns distinct appellations', async () => {
+    const result = await sqliteAdapter.getWineFacets('appellation', '');
+    expect(result).toContain('Oakville');
+    expect(result).toContain('Pomerol');
+    expect(result).toContain('Meursault');
+  });
+
+  it('returns results sorted alphabetically', async () => {
+    const result = await sqliteAdapter.getWineFacets('variety', '');
+    expect(result).toEqual([...result].sort());
+  });
+
+  it('excludes null values from results', async () => {
+    // W5 has no appellation — ensure it does not produce a null entry
+    const result = await sqliteAdapter.getWineFacets('appellation', '');
+    expect(result.every(r => r !== null && r !== undefined && r !== '')).toBe(true);
+  });
+
+  it('excludes empty string values from results', async () => {
+    await sqliteAdapter.createWine({ name: 'Empty Variety', variety: '' });
+    const result = await sqliteAdapter.getWineFacets('variety', '');
+    expect(result.every(v => v !== '')).toBe(true);
+  });
+
+  it('returns empty array for disallowed field (SQL injection guard)', async () => {
+    const result = await sqliteAdapter.getWineFacets('barcode', '');
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array for another disallowed field', async () => {
+    const result = await sqliteAdapter.getWineFacets('id', '');
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when no wines match the query', async () => {
+    const result = await sqliteAdapter.getWineFacets('variety', 'zzznomatch');
+    expect(result).toEqual([]);
+  });
+
+  it('is case-insensitive for LIKE matching', async () => {
+    const upper = await sqliteAdapter.getWineFacets('variety', 'CABERNET');
+    const lower = await sqliteAdapter.getWineFacets('variety', 'cabernet');
+    expect(upper).toContain('Cabernet Sauvignon');
+    expect(lower).toContain('Cabernet Sauvignon');
+  });
+
+  it('limits results to 20', async () => {
+    // Insert 25 distinct varieties
+    for (let i = 1; i <= 25; i++) {
+      await sqliteAdapter.createWine({ name: `Limit Wine ${i}`, variety: `Variety ${String(i).padStart(2, '0')}` });
+    }
+    const result = await sqliteAdapter.getWineFacets('variety', 'Variety');
+    expect(result.length).toBeLessThanOrEqual(20);
+  });
+});

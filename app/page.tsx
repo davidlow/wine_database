@@ -67,10 +67,10 @@ export default function DashboardPage() {
       <div className="max-w-md mx-auto px-4 py-12 text-center">
         <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
         <h2 className="text-lg font-semibold mb-2">No profiles yet</h2>
-        <p className="text-sm text-muted-foreground mb-6">Create a profile to start managing your wine cellar.</p>
+        <p className="text-sm text-muted-foreground mb-6">Create a cellar to start managing your wine collection.</p>
         <Link href="/profiles" className="inline-flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
           <Plus className="h-4 w-4" />
-          Create Profile
+          Create Cellar
         </Link>
       </div>
     );
@@ -92,10 +92,10 @@ export default function DashboardPage() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          { href: '/scanner', icon: ScanLine, label: 'Scan Barcode' },
+          { href: '/scanner', icon: ScanLine, label: 'Scanner' },
           { href: '/wines/new', icon: Plus, label: 'Add Wine' },
           { href: '/wines', icon: Wine, label: 'Wine Catalog' },
-          { href: '/profiles', icon: Layers, label: 'Profiles' },
+          { href: '/profiles', icon: Layers, label: 'Cellars' },
         ].map(({ href, icon: Icon, label }) => (
           <Link key={href} href={href} className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 hover:shadow-md hover:border-primary/30 transition-all">
             <Icon className="h-6 w-6 text-primary" />
