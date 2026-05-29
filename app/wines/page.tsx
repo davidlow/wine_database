@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useCallback, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, Loader2, MapPin, X, Search } from 'lucide-react';
+import { Plus, Loader2, MapPin, X } from 'lucide-react';
 import Link from 'next/link';
 import { useWineSearch } from '@/hooks/useWineSearch';
 import { useProfile } from '@/hooks/useProfile';
@@ -10,73 +10,7 @@ import WineCard from '@/components/WineCard';
 import WineSearch from '@/components/WineSearch';
 import LocationPicker from '@/components/LocationPicker';
 import { cn } from '@/lib/utils';
-import type { Wine, Profile, ProducerStats } from '@/types';
-
-// ── Producers view ─────────────────────────────────────────────────────────────
-function ProducersView() {
-  const [producers, setProducers] = useState<ProducerStats[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    fetch('/api/producers')
-      .then(r => r.ok ? r.json() : [])
-      .then(setProducers)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const filtered = producers.filter(p =>
-    !query || p.producer.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <input
-          type="search"
-          placeholder="Search producers…"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-
-      {loading ? (
-        <div className="space-y-2">
-          {[...Array(5)].map((_, i) => <div key={i} className="h-16 rounded-lg border bg-muted animate-pulse" />)}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-10 text-sm text-muted-foreground">
-          {query ? 'No producers match your search.' : 'No producers found.'}
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">{filtered.length} producer{filtered.length !== 1 ? 's' : ''}</p>
-          {filtered.map(p => (
-            <Link
-              key={p.producer}
-              href={`/producers/${encodeURIComponent(p.producer)}`}
-              className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 hover:shadow-sm hover:border-primary/30 transition-all"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">{p.producer}</p>
-                <p className="text-xs text-muted-foreground">
-                  {p.wine_count} {p.wine_count === 1 ? 'wine' : 'wines'}
-                  {p.bottle_count > 0 ? ` · ${p.bottle_count} in cellar` : ''}
-                </p>
-              </div>
-              <div className="text-right ml-4 shrink-0">
-                <p className="text-sm font-semibold">{p.transaction_count}</p>
-                <p className="text-xs text-muted-foreground">transactions</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import type { Wine, Profile } from '@/types';
 
 // ── Quick-add modal ────────────────────────────────────────────────────────────
 function QuickAddModal({
@@ -222,9 +156,6 @@ function WinesContent() {
   const { profiles, activeProfile } = useProfile();
   const [quickAddWine, setQuickAddWine] = useState<Wine | null>(null);
 
-  // "view" param switches between catalog and producers
-  const view = searchParams.get('view') ?? 'catalog';
-
   const profileIds = searchParams.get('profile_ids') ?? undefined;
   const { wines, loading, error, params, updateParam, clearParams, refresh } = useWineSearch({ profile_ids: profileIds });
 
@@ -260,27 +191,6 @@ function WinesContent() {
         </Link>
       </div>
 
-      {/* Tab switcher: Catalog | Producers */}
-      <div className="flex gap-0 border-b">
-        {(['catalog', 'producers'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => router.push(tab === 'catalog' ? '/wines' : '/wines?view=producers')}
-            className={cn(
-              'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize',
-              view === tab ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* Producers view */}
-      {view === 'producers' && <ProducersView />}
-
-      {/* Catalog view — hidden when on producers tab */}
-      {view === 'catalog' && <>
       {/* Cellar filter chips */}
       {profiles.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -367,7 +277,6 @@ function WinesContent() {
           onSuccess={refresh}
         />
       )}
-      </>}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Wine, ScanLine, Layers, BarChart2 } from 'lucide-react';
+import { Home, Wine, ScanLine, Layers, BarChart2, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
 import { useProfile } from '@/hooks/useProfile';
@@ -47,13 +47,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Wine className="h-4 w-4 shrink-0" />
             Wines
           </Link>
-          <Link href="/scanner" className={navItemCls(isActive('/scanner'))}>
-            <ScanLine className="h-4 w-4 shrink-0" />
-            Scanner
+          <Link href="/producers" className={navItemCls(isActive('/producers'))}>
+            <Building2 className="h-4 w-4 shrink-0" />
+            Producers
           </Link>
           <Link href={cellarsHref} className={navItemCls(isActive('/profiles'))}>
             <Layers className="h-4 w-4 shrink-0" />
             Cellars
+          </Link>
+          <Link href="/scanner" className={navItemCls(isActive('/scanner'))}>
+            <ScanLine className="h-4 w-4 shrink-0" />
+            Scanner
           </Link>
           <Link href="/statistics" className={navItemCls(isActive('/statistics'))}>
             <BarChart2 className="h-4 w-4 shrink-0" />
@@ -90,13 +94,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Wine className="h-5 w-5" />
             Wines
           </Link>
-          <Link href="/scanner" className={mobileNavItemCls(isActive('/scanner'))}>
-            <ScanLine className="h-5 w-5" />
-            Scanner
+          <Link href="/producers" className={mobileNavItemCls(isActive('/producers'))}>
+            <Building2 className="h-5 w-5" />
+            Producers
           </Link>
           <Link href={cellarsHref} className={mobileNavItemCls(isActive('/profiles'))}>
             <Layers className="h-5 w-5" />
             Cellars
+          </Link>
+          <Link href="/scanner" className={mobileNavItemCls(isActive('/scanner'))}>
+            <ScanLine className="h-5 w-5" />
+            Scanner
           </Link>
           <Link href="/statistics" className={mobileNavItemCls(isActive('/statistics'))}>
             <BarChart2 className="h-5 w-5" />
