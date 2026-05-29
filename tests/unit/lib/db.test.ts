@@ -1809,3 +1809,79 @@ describe('Producers: getProducers and getProducerWines', () => {
     expect(wines).toEqual([]);
   });
 });
+
+// ─── Wine sorting ────────────────────────────────────────────────────────────
+
+describe('Wine sort: sort param passed through getWines', () => {
+  let p: { id: string };
+
+  beforeEach(async () => {
+    p = await sqliteAdapter.createProfile({ user_id: 'u-sort', name: 'Sort Cellar', description: undefined, group_name: undefined });
+    await sqliteAdapter.createWine({ name: 'Zinfandel Red', producer: 'Producer B', average_price: 50, vintage_year: 2015, drink_from_year: 2020, drink_by_year: 2025 });
+    await sqliteAdapter.createWine({ name: 'Albariño White', producer: 'Producer A', average_price: 20, vintage_year: 2020, drink_from_year: 2021, drink_by_year: 2030 });
+    await sqliteAdapter.createWine({ name: 'Merlot Classic', producer: 'Producer C', average_price: 35, vintage_year: 2010, drink_from_year: 2015, drink_by_year: 2022 });
+  });
+
+  it('default (no sort) returns name ascending', async () => {
+    const wines = await sqliteAdapter.getWines({});
+    const names = wines.map(w => w.name);
+    expect(names.indexOf('Albariño White')).toBeLessThan(names.indexOf('Merlot Classic'));
+    expect(names.indexOf('Merlot Classic')).toBeLessThan(names.indexOf('Zinfandel Red'));
+  });
+
+  it('sort=name:desc returns reverse alphabetical', async () => {
+    const wines = await sqliteAdapter.getWines({ sort: 'name:desc' });
+    const names = wines.map(w => w.name);
+    expect(names.indexOf('Zinfandel Red')).toBeLessThan(names.indexOf('Merlot Classic'));
+    expect(names.indexOf('Merlot Classic')).toBeLessThan(names.indexOf('Albariño White'));
+  });
+
+  it('sort=price:asc orders cheapest first (nulls last)', async () => {
+    const wines = await sqliteAdapter.getWines({ sort: 'price:asc' });
+    const prices = wines.map(w => w.average_price).filter((p): p is number => p != null);
+    for (let i = 1; i < prices.length; i++) expect(prices[i]).toBeGreaterThanOrEqual(prices[i - 1]);
+  });
+
+  it('sort=price:desc orders most expensive first', async () => {
+    const wines = await sqliteAdapter.getWines({ sort: 'price:desc' });
+    const prices = wines.map(w => w.average_price).filter((p): p is number => p != null);
+    for (let i = 1; i < prices.length; i++) expect(prices[i]).toBeLessThanOrEqual(prices[i - 1]);
+  });
+
+  it('sort=vintage:asc orders oldest vintage first', async () => {
+    const wines = await sqliteAdapter.getWines({ sort: 'vintage:asc' });
+    const years = wines.map(w => w.vintage_year).filter((y): y is number => y != null);
+    for (let i = 1; i < years.length; i++) expect(years[i]).toBeGreaterThanOrEqual(years[i - 1]);
+  });
+
+  it('sort=drink_until:asc orders soonest drink-by first', async () => {
+    const wines = await sqliteAdapter.getWines({ sort: 'drink_until:asc' });
+    const years = wines.map(w => w.drink_by_year).filter((y): y is number => y != null);
+    for (let i = 1; i < years.length; i++) expect(years[i]).toBeGreaterThanOrEqual(years[i - 1]);
+  });
+
+  it('multi-sort: sort=producer:asc,price:desc sorts by producer then price within producer', async () => {
+    const wines = await sqliteAdapter.getWines({ sort: 'producer:asc,price:desc' });
+    // Producer A < Producer B < Producer C alphabetically
+    const producers = wines.map(w => w.producer).filter(Boolean);
+    expect(producers[0]).toBe('Producer A');
+    const bIdx = producers.indexOf('Producer B');
+    const cIdx = producers.indexOf('Producer C');
+    expect(bIdx).toBeLessThan(cIdx);
+  });
+
+  it('sort=bottles:desc orders by bottle count descending', async () => {
+    const wines = await sqliteAdapter.getWines({});
+    const zin = wines.find(w => w.name === 'Zinfandel Red')!;
+    const alb = wines.find(w => w.name === 'Albariño White')!;
+    // Add 3 bottles to Zinfandel, 1 to Albariño
+    await sqliteAdapter.addBottle({ wine_id: zin.id, profile_id: p.id, location: '' }, 'u-sort');
+    await sqliteAdapter.addBottle({ wine_id: zin.id, profile_id: p.id, location: '' }, 'u-sort');
+    await sqliteAdapter.addBottle({ wine_id: zin.id, profile_id: p.id, location: '' }, 'u-sort');
+    await sqliteAdapter.addBottle({ wine_id: alb.id, profile_id: p.id, location: '' }, 'u-sort');
+
+    const sorted = await sqliteAdapter.getWines({ sort: 'bottles:desc' });
+    expect(sorted[0].name).toBe('Zinfandel Red');
+    expect(sorted[1].name).toBe('Albariño White');
+  });
+});

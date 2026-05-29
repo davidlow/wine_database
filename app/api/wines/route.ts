@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
       drink_status: (searchParams.get('drink_status') as DrinkStatusFilter) ?? undefined,
       price_min: searchParams.get('price_min') ? Number(searchParams.get('price_min')) : undefined,
       price_max: searchParams.get('price_max') ? Number(searchParams.get('price_max')) : undefined,
+      sort: searchParams.get('sort') ?? undefined,
     };
 
     const db = await getDb();

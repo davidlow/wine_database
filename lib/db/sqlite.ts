@@ -73,6 +73,45 @@ export function closeSqliteDb(): void {
   if (g.__wineSqliteDb) { g.__wineSqliteDb.close(); g.__wineSqliteDb = undefined; }
 }
 
+const SORT_FIELD_MAP: Record<string, string> = {
+  name:        'w.name',
+  producer:    "COALESCE(w.producer, '')",
+  price:       'w.average_price',
+  vintage:     'w.vintage_year',
+  drink_from:  'w.drink_from_year',
+  drink_until: 'w.drink_by_year',
+};
+
+function buildSortClause(
+  sort: string | undefined,
+  profileIds: string[]
+): { orderBy: string; orderValues: unknown[] } {
+  if (!sort) return { orderBy: 'w.name ASC', orderValues: [] };
+
+  const parts: string[] = [];
+  const orderValues: unknown[] = [];
+
+  for (const key of sort.split(',').map(s => s.trim()).filter(Boolean)) {
+    const [field, rawDir] = key.split(':');
+    const dir = rawDir === 'desc' ? 'DESC' : 'ASC';
+
+    if (field === 'bottles') {
+      if (profileIds.length > 0) {
+        const ph = profileIds.map(() => '?').join(', ');
+        parts.push(`(SELECT COALESCE(SUM(ci.quantity),0) FROM cellar_inventory ci WHERE ci.wine_id=w.id AND ci.profile_id IN (${ph}) AND ci.quantity>0) ${dir}`);
+        orderValues.push(...profileIds);
+      } else {
+        parts.push(`(SELECT COALESCE(SUM(ci.quantity),0) FROM cellar_inventory ci WHERE ci.wine_id=w.id AND ci.quantity>0) ${dir}`);
+      }
+    } else {
+      const col = SORT_FIELD_MAP[field];
+      if (col) parts.push(`${col} ${dir} NULLS LAST`);
+    }
+  }
+
+  return { orderBy: parts.join(', ') || 'w.name ASC', orderValues };
+}
+
 export const sqliteAdapter: DbAdapter = {
   // --- Wines ---
 
@@ -138,8 +177,9 @@ export const sqliteAdapter: DbAdapter = {
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT DISTINCT w.* FROM wines w ${where} ORDER BY w.name ASC`;
-    return d.prepare(sql).all(...values) as Wine[];
+    const { orderBy, orderValues } = buildSortClause(params.sort, profileIds);
+    const sql = `SELECT DISTINCT w.* FROM wines w ${where} ORDER BY ${orderBy}`;
+    return d.prepare(sql).all(...values, ...orderValues) as Wine[];
   },
 
   async getWineById(id: string): Promise<Wine | null> {

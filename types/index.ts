@@ -105,6 +105,9 @@ export interface WineSearchParams {
   // Price range
   price_min?: number;
   price_max?: number;
+  // Multi-level sort: comma-separated "field:dir" pairs, e.g. "drink_until:asc,price:desc"
+  // Supported fields: name | producer | price | vintage | drink_from | drink_until | bottles
+  sort?: string;
 }
 
 export interface WineNote {

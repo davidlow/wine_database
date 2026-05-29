@@ -55,9 +55,46 @@ export const supabaseAdapter: DbAdapter = {
       }
     }
 
-    const { data, error } = await query.order('name');
+    // Apply sort — Supabase supports column-level order; bottles subquery done client-side
+    const SUPABASE_SORT_COLS: Record<string, string> = {
+      name: 'name', producer: 'producer', price: 'average_price',
+      vintage: 'vintage_year', drink_from: 'drink_from_year', drink_until: 'drink_by_year',
+    };
+    let needsBottleSort = false;
+    let bottleSortDir: 'asc' | 'desc' = 'desc';
+    if (params.sort) {
+      const keys = params.sort.split(',').map(s => s.trim()).filter(Boolean);
+      for (const key of keys) {
+        const [field, rawDir] = key.split(':');
+        const ascending = rawDir !== 'desc';
+        if (field === 'bottles') { needsBottleSort = true; bottleSortDir = ascending ? 'asc' : 'desc'; }
+        else {
+          const col = SUPABASE_SORT_COLS[field];
+          if (col) query = query.order(col, { ascending, nullsFirst: false });
+        }
+      }
+    } else {
+      query = query.order('name');
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
-    return data as Wine[];
+    let result = data as Wine[];
+
+    if (needsBottleSort) {
+      // Fetch bottle counts, then sort client-side
+      const { data: inv } = await getSupabaseAdmin()
+        .from('cellar_inventory').select('wine_id, quantity').gt('quantity', 0);
+      const bottleCounts = new Map<string, number>();
+      for (const row of inv ?? []) {
+        bottleCounts.set(row.wine_id, (bottleCounts.get(row.wine_id) ?? 0) + (row.quantity as number));
+      }
+      result = result.sort((a, b) => {
+        const diff = (bottleCounts.get(a.id) ?? 0) - (bottleCounts.get(b.id) ?? 0);
+        return bottleSortDir === 'asc' ? diff : -diff;
+      });
+    }
+    return result;
   },
 
   async getWineById(id: string): Promise<Wine | null> {

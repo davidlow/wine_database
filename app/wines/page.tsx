@@ -8,6 +8,7 @@ import { useWineSearch } from '@/hooks/useWineSearch';
 import { useProfile } from '@/hooks/useProfile';
 import WineCard from '@/components/WineCard';
 import WineSearch from '@/components/WineSearch';
+import WineSort from '@/components/WineSort';
 import LocationPicker from '@/components/LocationPicker';
 import { cn } from '@/lib/utils';
 import type { Wine, Profile } from '@/types';
@@ -224,6 +225,7 @@ function WinesContent() {
       )}
 
       <WineSearch params={params} onChange={updateParam} onClear={clearParams} />
+      <WineSort sort={params.sort} onChange={v => updateParam('sort', v)} />
 
       {error && (
         <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
