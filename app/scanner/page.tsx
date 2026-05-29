@@ -124,13 +124,22 @@ export default function ScannerPage() {
           </p>
         </div>
         {scanState === 'idle' && (
-          <Link
-            href="/scanner/bulk"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors shrink-0"
-          >
-            <PackagePlus className="h-3.5 w-3.5" />
-            Bulk Scan
-          </Link>
+          <div className="flex gap-2 shrink-0">
+            <Link
+              href="/scanner/receipt"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Scan Receipt
+            </Link>
+            <Link
+              href="/scanner/bulk"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors"
+            >
+              <PackagePlus className="h-3.5 w-3.5" />
+              Bulk Scan
+            </Link>
+          </div>
         )}
       </div>
 

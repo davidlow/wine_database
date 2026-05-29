@@ -118,6 +118,18 @@ export interface WineNote {
   created_at: string;
 }
 
+// One wine item extracted from a receipt or packing slip by Gemini
+export interface ScannedWineItem {
+  name: string;
+  producer?: string;
+  vintage_year?: number;
+  variety?: string;
+  wine_type?: string;
+  quantity: number;
+  unit_price?: number;
+  confidence?: number;
+}
+
 export interface ProducerStats {
   producer: string;
   wine_count: number;
