@@ -4,7 +4,7 @@ import type { WineType } from '@/types';
 const CURRENT_YEAR = new Date().getFullYear();
 
 const PROMPT = `You are a wine expert. Analyze this wine bottle label image and extract structured information.
-Use Google Search to look up the wine and fill in any details not visible on the label (grape variety, region, appellation, vintage if not shown, typical retail price, drink window).
+Use Google Search to look up the wine and fill in any details not visible on the label (grape variety, region, appellation, vintage if not shown, typical retail price, drink window, structural characteristics, food pairings).
 
 Return ONLY a JSON object — no markdown, no code fences, no extra text:
 {
@@ -21,14 +21,23 @@ Return ONLY a JSON object — no markdown, no code fences, no extra text:
   "drink_from_year": ${CURRENT_YEAR},
   "drink_by_year": ${CURRENT_YEAR + 10},
   "description": "one short sentence describing the wine style",
+  "acidity": 3,
+  "tannin": 4,
+  "alcohol": 3,
+  "sweetness": 1,
+  "body": 4,
+  "fruit_profile": "dark cherry, blackcurrant, plum with hints of cedar",
+  "food_pairings": ["grilled steak", "lamb chops", "aged cheddar", "mushroom risotto", "dark chocolate"],
   "confidence": 0.95
 }
 
 Rules:
 - "name" is required; omit any other field you genuinely cannot determine
 - "average_price" is the typical retail price in USD — search for it if not on the label; omit if truly unknown
-- "drink_from_year" is the earliest year this wine should be drunk (when it will be ready)
-- "drink_by_year" is the last year this wine should be drunk (after this it declines) — default to vintage_year + 10 if unknown, or ${CURRENT_YEAR + 10} if no vintage
+- "drink_from_year" / "drink_by_year": default to vintage_year + 10 if unknown, or ${CURRENT_YEAR + 10} if no vintage
+- Structural scores 0–5: 0 = least/lightest, 5 = most/fullest (e.g. acidity 0=flat, 5=very tart; tannin 0=silky, 5=grippy; alcohol 0=low-ABV, 5=very high-alcohol; sweetness 0=bone-dry, 5=very sweet; body 0=light, 5=full-bodied)
+- "fruit_profile": brief free-text description of fruit aromas and flavors
+- "food_pairings": 4–8 specific dishes or food categories that pair well with this wine
 - Do not guess randomly — omit uncertain fields rather than fabricate them
 - "confidence" (0.0–1.0) reflects certainty in the overall extraction`;
 
@@ -65,8 +74,20 @@ type WineData = {
   drink_from_year?: number;
   drink_by_year?: number;
   description?: string;
+  acidity?: number;
+  tannin?: number;
+  alcohol?: number;
+  sweetness?: number;
+  body?: number;
+  fruit_profile?: string;
+  food_pairings?: string[];
   confidence?: number;
 };
+
+function clampScore(val: number | undefined): number | undefined {
+  if (val == null || typeof val !== 'number' || isNaN(val)) return undefined;
+  return Math.max(0, Math.min(5, Math.round(val)));
+}
 
 function extractJson(text: string): WineData {
   const clean = text.trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
@@ -143,6 +164,15 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
     drink_from_year: data.drink_from_year,
     drink_by_year: data.drink_by_year,
     description: data.description,
+    acidity: clampScore(data.acidity),
+    tannin: clampScore(data.tannin),
+    alcohol: clampScore(data.alcohol),
+    sweetness: clampScore(data.sweetness),
+    body: clampScore(data.body),
+    fruit_profile: data.fruit_profile,
+    food_pairings: Array.isArray(data.food_pairings)
+      ? data.food_pairings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+      : undefined,
     source: 'label-scan',
     confidence: data.confidence,
   };

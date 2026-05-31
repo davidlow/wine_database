@@ -38,6 +38,7 @@ export default function ScannerPage() {
   const [savedWineName, setSavedWineName] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(true);
   const [capturedLabelImage, setCapturedLabelImage] = useState<string | null>(null);
+  const [labelFoodPairings, setLabelFoodPairings] = useState<string[]>([]);
 
   const handleDetected = async (barcode: string) => {
     if (processingRef.current) return;
@@ -68,6 +69,7 @@ export default function ScannerPage() {
     setSavedWineName(null);
     setShowScanner(true);
     setCapturedLabelImage(null);
+    setLabelFoodPairings([]);
   };
 
   const handleLabelCapture = async (imageBase64: string) => {
@@ -88,6 +90,9 @@ export default function ScannerPage() {
         return;
       }
       setResult(data as WineLookupResult);
+      if (Array.isArray(data.food_pairings) && data.food_pairings.length > 0) {
+        setLabelFoodPairings(data.food_pairings as string[]);
+      }
       setScanState('confirming');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Label analysis failed');
@@ -96,17 +101,38 @@ export default function ScannerPage() {
   };
 
   const handleSaveWine = async (data: Omit<Wine, 'id' | 'created_at' | 'updated_at'>) => {
-    const payload = capturedLabelImage ? { ...data, label_image: capturedLabelImage } : data;
+    // Merge label image and structural elements from Gemini into the payload
+    const extras: Partial<Wine> = {};
+    if (capturedLabelImage) extras.label_image = capturedLabelImage;
+    if (result?.acidity != null) extras.acidity = result.acidity;
+    if (result?.tannin != null) extras.tannin = result.tannin;
+    if (result?.alcohol != null) extras.alcohol = result.alcohol;
+    if (result?.sweetness != null) extras.sweetness = result.sweetness;
+    if (result?.body != null) extras.body = result.body;
+    if (result?.fruit_profile) extras.fruit_profile = result.fruit_profile;
+
     const res = await fetch('/api/wines', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...data, ...extras }),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error ?? 'Failed to save wine');
     }
     const wine: Wine = await res.json();
+
+    // Batch-add food pairings from Gemini label scan (fire-and-forget, non-blocking)
+    if (labelFoodPairings.length > 0) {
+      for (const food of labelFoodPairings) {
+        fetch(`/api/wines/${wine.id}/pairings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ food }),
+        }).catch(() => { /* ignore individual pairing failures */ });
+      }
+    }
+
     setSavedWineId(wine.id);
     setSavedWineName(wine.name);
     setScanState('saved');
