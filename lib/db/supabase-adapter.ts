@@ -10,6 +10,7 @@ import type {
   AddBottleInput,
   RemoveBottleInput,
   MoveBottleInput,
+  WineFoodPairing,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
@@ -483,5 +484,44 @@ export const supabaseAdapter: DbAdapter = {
         bottle_count: invQty.get(w.id) ?? 0,
       }))
       .sort((a, b) => b.transaction_count - a.transaction_count || a.name.localeCompare(b.name));
+  },
+
+  // --- Food pairings ---
+
+  async getFoodPairings(wineId: string) {
+    const { data, error } = await getSupabaseAdmin()
+      .from('wine_food_pairings').select('*').eq('wine_id', wineId).order('created_at');
+    if (error) throw error;
+    return (data ?? []) as WineFoodPairing[];
+  },
+
+  async addFoodPairing(wineId: string, food: string, source: 'gemini' | 'manual') {
+    const row = { id: generateId(), wine_id: wineId, food: food.trim(), source, created_at: new Date().toISOString() };
+    const { error } = await getSupabaseAdmin().from('wine_food_pairings').insert(row);
+    if (error) throw error;
+    return row as WineFoodPairing;
+  },
+
+  async deleteFoodPairing(id: string) {
+    await getSupabaseAdmin().from('wine_food_pairings').delete().eq('id', id);
+  },
+
+  async getWinesWithPairings(foods: string[]) {
+    if (foods.length === 0) return [];
+    const lower = foods.map(f => f.toLowerCase());
+    const { data: pairings } = await getSupabaseAdmin()
+      .from('wine_food_pairings').select('wine_id').in('food', lower);
+    const wineIds = [...new Set((pairings ?? []).map(p => p.wine_id))];
+    if (wineIds.length === 0) return [];
+    const { data, error } = await getSupabaseAdmin().from('wines').select('*').in('id', wineIds);
+    if (error) throw error;
+    return (data ?? []) as Wine[];
+  },
+
+  async getAllFoods() {
+    const { data } = await getSupabaseAdmin()
+      .from('wine_food_pairings').select('food').order('food');
+    const unique = [...new Set((data ?? []).map((r: { food: string }) => r.food.toLowerCase()))];
+    return unique.sort();
   },
 };

@@ -41,6 +41,13 @@ function openDb(resolvedPath: string): Database.Database {
   try { conn.exec('ALTER TABLE profiles ADD COLUMN group_name TEXT'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN drink_from_year INTEGER'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN drink_by_year INTEGER'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN label_image TEXT'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN acidity REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN tannin REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN alcohol REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN sweetness REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN body REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_profile TEXT'); } catch {}
   return conn;
 }
 
@@ -63,7 +70,7 @@ function nullify(obj: Record<string, unknown>, keys: readonly string[]): Record<
   return Object.fromEntries(keys.map(k => [k, obj[k] ?? null]));
 }
 
-const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'created_at', 'updated_at'] as const;
+const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'label_image', 'acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'fruit_profile', 'created_at', 'updated_at'] as const;
 const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'group_name', 'created_at', 'updated_at'] as const;
 const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
 const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'created_at', 'updated_at'] as const;
@@ -197,10 +204,12 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO wines (id, name, producer, variety, wine_type, region, appellation, country,
         vintage_year, description, average_price, alcohol_content, drink_from_year, drink_by_year,
-        barcode, image_url, created_at, updated_at)
+        barcode, image_url, label_image, acidity, tannin, alcohol, sweetness, body, fruit_profile,
+        created_at, updated_at)
       VALUES (@id, @name, @producer, @variety, @wine_type, @region, @appellation, @country,
         @vintage_year, @description, @average_price, @alcohol_content, @drink_from_year, @drink_by_year,
-        @barcode, @image_url, @created_at, @updated_at)
+        @barcode, @image_url, @label_image, @acidity, @tannin, @alcohol, @sweetness, @body, @fruit_profile,
+        @created_at, @updated_at)
     `).run(nullify(wine as unknown as Record<string, unknown>, WINE_COLS));
     return wine;
   },
@@ -215,7 +224,9 @@ export const sqliteAdapter: DbAdapter = {
         region=@region, appellation=@appellation, country=@country, vintage_year=@vintage_year,
         description=@description, average_price=@average_price, alcohol_content=@alcohol_content,
         drink_from_year=@drink_from_year, drink_by_year=@drink_by_year,
-        barcode=@barcode, image_url=@image_url, updated_at=@updated_at
+        barcode=@barcode, image_url=@image_url, label_image=@label_image,
+        acidity=@acidity, tannin=@tannin, alcohol=@alcohol, sweetness=@sweetness,
+        body=@body, fruit_profile=@fruit_profile, updated_at=@updated_at
       WHERE id=@id
     `).run(nullify(updated as unknown as Record<string, unknown>, WINE_COLS));
     return updated;
@@ -570,5 +581,41 @@ export const sqliteAdapter: DbAdapter = {
       GROUP BY w.id
       ORDER BY transaction_count DESC, w.name ASC
     `).all(producer) as (import('@/types').Wine & { transaction_count: number; bottle_count: number })[];
+  },
+
+  // --- Food pairings ---
+
+  async getFoodPairings(wineId: string) {
+    return getDb().prepare(
+      'SELECT * FROM wine_food_pairings WHERE wine_id = ? ORDER BY created_at ASC'
+    ).all(wineId) as import('@/types').WineFoodPairing[];
+  },
+
+  async addFoodPairing(wineId: string, food: string, source: 'gemini' | 'manual') {
+    const d = getDb();
+    const row = { id: generateId(), wine_id: wineId, food: food.trim(), source, created_at: new Date().toISOString() };
+    d.prepare('INSERT INTO wine_food_pairings (id, wine_id, food, source, created_at) VALUES (@id, @wine_id, @food, @source, @created_at)').run(row);
+    return row as import('@/types').WineFoodPairing;
+  },
+
+  async deleteFoodPairing(id: string) {
+    getDb().prepare('DELETE FROM wine_food_pairings WHERE id = ?').run(id);
+  },
+
+  async getWinesWithPairings(foods: string[]) {
+    if (foods.length === 0) return [];
+    const ph = foods.map(() => '?').join(', ');
+    return getDb().prepare(`
+      SELECT DISTINCT w.* FROM wines w
+      JOIN wine_food_pairings wfp ON wfp.wine_id = w.id
+      WHERE LOWER(wfp.food) IN (${ph})
+    `).all(...foods.map(f => f.toLowerCase())) as import('@/types').Wine[];
+  },
+
+  async getAllFoods() {
+    const rows = getDb().prepare(
+      'SELECT DISTINCT LOWER(food) as food FROM wine_food_pairings ORDER BY food ASC'
+    ).all() as { food: string }[];
+    return rows.map(r => r.food);
   },
 };

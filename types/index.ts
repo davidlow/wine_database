@@ -26,8 +26,28 @@ export interface Wine {
   drink_by_year?: number;
   barcode?: string;
   image_url?: string;
+  // Label photo: base64 WebP (no data: prefix) — omitted from list queries for performance
+  label_image?: string;
+  // Structural element scores 0–5 (0 = low, 5 = high)
+  acidity?: number;
+  tannin?: number;
+  alcohol?: number;
+  sweetness?: number;
+  body?: number;
+  fruit_profile?: string;
   created_at: string;
   updated_at: string;
+}
+
+// Five-dimension structural vector: [acidity, tannin, alcohol, sweetness, body]
+export type WineStructureVector = [number, number, number, number, number];
+
+export interface WineFoodPairing {
+  id: string;
+  wine_id: string;
+  food: string;
+  source: 'gemini' | 'manual';
+  created_at: string;
 }
 
 export interface Profile {
@@ -227,4 +247,11 @@ export interface DbAdapter {
   // Producers
   getProducers(): Promise<ProducerStats[]>;
   getProducerWines(producer: string): Promise<(Wine & { transaction_count: number; bottle_count: number })[]>;
+
+  // Food pairings
+  getFoodPairings(wineId: string): Promise<WineFoodPairing[]>;
+  addFoodPairing(wineId: string, food: string, source: 'gemini' | 'manual'): Promise<WineFoodPairing>;
+  deleteFoodPairing(id: string): Promise<void>;
+  getWinesWithPairings(foods: string[]): Promise<Wine[]>;
+  getAllFoods(): Promise<string[]>;
 }

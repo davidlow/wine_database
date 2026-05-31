@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS wine_notes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wine_notes_wine_id ON wine_notes(wine_id);
+
+-- Per-wine food pairing recommendations (Gemini or manual)
+CREATE TABLE IF NOT EXISTS wine_food_pairings (
+  id TEXT PRIMARY KEY,
+  wine_id TEXT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+  food TEXT NOT NULL,
+  source TEXT DEFAULT 'manual',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wfp_wine_id ON wine_food_pairings(wine_id);
+CREATE INDEX IF NOT EXISTS idx_wfp_food ON wine_food_pairings(food);
 CREATE INDEX IF NOT EXISTS idx_wines_barcode ON wines(barcode);
 CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(name);
 CREATE INDEX IF NOT EXISTS idx_cellar_wine_id ON cellar_inventory(wine_id);
