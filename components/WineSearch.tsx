@@ -35,7 +35,12 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
   const hasAdvancedFilters = !!(
     params.price_min != null || params.price_max != null ||
     params.regions || params.appellation || params.vintage_year ||
-    params.country || params.variety
+    params.country || params.variety ||
+    params.acidity_min != null || params.acidity_max != null ||
+    params.tannin_min != null || params.tannin_max != null ||
+    params.sweetness_min != null || params.sweetness_max != null ||
+    params.body_min != null || params.body_max != null ||
+    params.alcohol_str_min != null || params.alcohol_str_max != null
   );
 
   useEffect(() => {
@@ -255,6 +260,39 @@ export default function WineSearch({ params, onChange, onClear }: Props) {
               className="w-full"
               inputClassName={filterInputCls}
             />
+          </div>
+
+          {/* Structural score ranges */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Structural Profile <span className="font-normal">(0–5 range)</span></p>
+            <div className="grid grid-cols-1 gap-2">
+              {([
+                { label: 'Acidity', minKey: 'acidity_min', maxKey: 'acidity_max' },
+                { label: 'Tannin', minKey: 'tannin_min', maxKey: 'tannin_max' },
+                { label: 'Sweetness', minKey: 'sweetness_min', maxKey: 'sweetness_max' },
+                { label: 'Body', minKey: 'body_min', maxKey: 'body_max' },
+                { label: 'Alcohol', minKey: 'alcohol_str_min', maxKey: 'alcohol_str_max' },
+              ] as const).map(({ label, minKey, maxKey }) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+                  <input
+                    type="number" min={0} max={5} step={1}
+                    placeholder="min"
+                    value={params[minKey] ?? ''}
+                    onChange={(e) => onChange(minKey, e.target.value ? Math.max(0, Math.min(5, Number(e.target.value))) : undefined)}
+                    className="w-14 px-2 py-1 text-xs border rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <span className="text-xs text-muted-foreground">–</span>
+                  <input
+                    type="number" min={0} max={5} step={1}
+                    placeholder="max"
+                    value={params[maxKey] ?? ''}
+                    onChange={(e) => onChange(maxKey, e.target.value ? Math.max(0, Math.min(5, Number(e.target.value))) : undefined)}
+                    className="w-14 px-2 py-1 text-xs border rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

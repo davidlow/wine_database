@@ -45,6 +45,16 @@ export const supabaseAdapter: DbAdapter = {
     if (params.producer) query = query.ilike('producer', `%${params.producer}%`);
     if (params.price_min != null) query = query.gte('average_price', params.price_min);
     if (params.price_max != null) query = query.lte('average_price', params.price_max);
+    if (params.acidity_min != null) query = query.gte('acidity', params.acidity_min);
+    if (params.acidity_max != null) query = query.lte('acidity', params.acidity_max);
+    if (params.tannin_min != null) query = query.gte('tannin', params.tannin_min);
+    if (params.tannin_max != null) query = query.lte('tannin', params.tannin_max);
+    if (params.sweetness_min != null) query = query.gte('sweetness', params.sweetness_min);
+    if (params.sweetness_max != null) query = query.lte('sweetness', params.sweetness_max);
+    if (params.body_min != null) query = query.gte('body', params.body_min);
+    if (params.body_max != null) query = query.lte('body', params.body_max);
+    if (params.alcohol_str_min != null) query = query.gte('alcohol', params.alcohol_str_min);
+    if (params.alcohol_str_max != null) query = query.lte('alcohol', params.alcohol_str_max);
 
     // Multi-select regions
     if (params.regions) {

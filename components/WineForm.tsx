@@ -44,6 +44,51 @@ function Field({ label, required, children, hint }: {
   );
 }
 
+const STRUCTURE_LABELS: Record<string, { lo: string; hi: string }> = {
+  acidity:   { lo: 'Flat', hi: 'Tart' },
+  tannin:    { lo: 'Silky', hi: 'Grippy' },
+  alcohol:   { lo: 'Low', hi: 'High' },
+  sweetness: { lo: 'Dry', hi: 'Sweet' },
+  body:      { lo: 'Light', hi: 'Full' },
+};
+
+function StructureSlider({
+  label, fieldKey, value, onChange,
+}: {
+  label: string;
+  fieldKey: string;
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+}) {
+  const desc = STRUCTURE_LABELS[fieldKey];
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-sm font-medium">{label}</span>
+        {value != null ? (
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-semibold tabular-nums w-3 text-right">{value}</span>
+            <button type="button" onClick={() => onChange(undefined)} className="text-muted-foreground hover:text-foreground leading-none text-base px-0.5">×</button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5">
+        {desc && <span className="text-[10px] text-muted-foreground w-8 shrink-0 text-right">{desc.lo}</span>}
+        <input
+          type="range" min={0} max={5} step={1}
+          value={value ?? 0}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 h-1.5 cursor-pointer accent-primary"
+          style={{ opacity: value == null ? 0.3 : 1 }}
+        />
+        {desc && <span className="text-[10px] text-muted-foreground w-8 shrink-0">{desc.hi}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function WineForm({ initialData, lookupResult, onSubmit, onCancel, submitLabel = 'Save Wine' }: Props) {
   const currentYear = new Date().getFullYear();
   const merged = { ...lookupResult, ...initialData };
@@ -63,6 +108,12 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
     drink_by_year: merged.drink_by_year ?? (currentYear + 10),
     barcode: merged.barcode ?? '',
     image_url: merged.image_url ?? '',
+    acidity: (merged as Partial<Wine>).acidity,
+    tannin: (merged as Partial<Wine>).tannin,
+    alcohol: (merged as Partial<Wine>).alcohol,
+    sweetness: (merged as Partial<Wine>).sweetness,
+    body: (merged as Partial<Wine>).body,
+    fruit_profile: (merged as Partial<Wine>).fruit_profile ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -253,6 +304,32 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
               placeholder="Tasting notes, pairings, etc."
             />
           </Field>
+        </div>
+      </div>
+
+      {/* Structural profile */}
+      <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+        <p className="text-sm font-semibold text-muted-foreground">Structural Profile <span className="font-normal">(0 = less · 5 = more)</span></p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+          {(['acidity', 'tannin', 'sweetness', 'body', 'alcohol'] as const).map((key) => (
+            <StructureSlider
+              key={key}
+              label={key.charAt(0).toUpperCase() + key.slice(1)}
+              fieldKey={key}
+              value={form[key] as number | undefined}
+              onChange={(v) => set(key, v)}
+            />
+          ))}
+          <div className="sm:col-span-2">
+            <Field label="Fruit Profile">
+              <input
+                className={inputCls}
+                value={form.fruit_profile ?? ''}
+                onChange={(e) => set('fruit_profile', e.target.value || undefined)}
+                placeholder="e.g. dark cherry, blackcurrant, plum with hints of cedar"
+              />
+            </Field>
+          </div>
         </div>
       </div>
 

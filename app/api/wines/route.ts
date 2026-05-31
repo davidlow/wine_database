@@ -21,6 +21,16 @@ export async function GET(request: NextRequest) {
       price_min: searchParams.get('price_min') ? Number(searchParams.get('price_min')) : undefined,
       price_max: searchParams.get('price_max') ? Number(searchParams.get('price_max')) : undefined,
       sort: searchParams.get('sort') ?? undefined,
+      acidity_min: searchParams.get('acidity_min') ? Number(searchParams.get('acidity_min')) : undefined,
+      acidity_max: searchParams.get('acidity_max') ? Number(searchParams.get('acidity_max')) : undefined,
+      tannin_min: searchParams.get('tannin_min') ? Number(searchParams.get('tannin_min')) : undefined,
+      tannin_max: searchParams.get('tannin_max') ? Number(searchParams.get('tannin_max')) : undefined,
+      sweetness_min: searchParams.get('sweetness_min') ? Number(searchParams.get('sweetness_min')) : undefined,
+      sweetness_max: searchParams.get('sweetness_max') ? Number(searchParams.get('sweetness_max')) : undefined,
+      body_min: searchParams.get('body_min') ? Number(searchParams.get('body_min')) : undefined,
+      body_max: searchParams.get('body_max') ? Number(searchParams.get('body_max')) : undefined,
+      alcohol_str_min: searchParams.get('alcohol_str_min') ? Number(searchParams.get('alcohol_str_min')) : undefined,
+      alcohol_str_max: searchParams.get('alcohol_str_max') ? Number(searchParams.get('alcohol_str_max')) : undefined,
     };
 
     const db = await getDb();

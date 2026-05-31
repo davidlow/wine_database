@@ -148,6 +148,16 @@ export const sqliteAdapter: DbAdapter = {
     if (params.producer) { conditions.push('w.producer LIKE ?'); values.push(`%${params.producer}%`); }
     if (params.price_min != null) { conditions.push('w.average_price >= ?'); values.push(params.price_min); }
     if (params.price_max != null) { conditions.push('w.average_price <= ?'); values.push(params.price_max); }
+    if (params.acidity_min != null) { conditions.push('w.acidity >= ?'); values.push(params.acidity_min); }
+    if (params.acidity_max != null) { conditions.push('w.acidity <= ?'); values.push(params.acidity_max); }
+    if (params.tannin_min != null) { conditions.push('w.tannin >= ?'); values.push(params.tannin_min); }
+    if (params.tannin_max != null) { conditions.push('w.tannin <= ?'); values.push(params.tannin_max); }
+    if (params.sweetness_min != null) { conditions.push('w.sweetness >= ?'); values.push(params.sweetness_min); }
+    if (params.sweetness_max != null) { conditions.push('w.sweetness <= ?'); values.push(params.sweetness_max); }
+    if (params.body_min != null) { conditions.push('w.body >= ?'); values.push(params.body_min); }
+    if (params.body_max != null) { conditions.push('w.body <= ?'); values.push(params.body_max); }
+    if (params.alcohol_str_min != null) { conditions.push('w.alcohol >= ?'); values.push(params.alcohol_str_min); }
+    if (params.alcohol_str_max != null) { conditions.push('w.alcohol <= ?'); values.push(params.alcohol_str_max); }
 
     // Multi-select regions (matches region OR appellation for any of the values)
     if (params.regions) {

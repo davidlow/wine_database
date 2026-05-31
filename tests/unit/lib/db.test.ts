@@ -1885,3 +1885,54 @@ describe('Wine sort: sort param passed through getWines', () => {
     expect(sorted[1].name).toBe('Albariño White');
   });
 });
+
+// ─── Structural score range filters ──────────────────────────────────────────
+
+describe('Structural score range filters', () => {
+  beforeEach(async () => {
+    await sqliteAdapter.createWine({ name: 'Grippy Tannic', tannin: 5, acidity: 3, body: 4, sweetness: 0, alcohol: 4 });
+    await sqliteAdapter.createWine({ name: 'Silky Low Tannin', tannin: 1, acidity: 4, body: 2, sweetness: 1, alcohol: 2 });
+    await sqliteAdapter.createWine({ name: 'Sweet Dessert', tannin: 0, acidity: 2, body: 3, sweetness: 5, alcohol: 3 });
+  });
+
+  it('filters by tannin_min', async () => {
+    const results = await sqliteAdapter.getWines({ tannin_min: 4 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Grippy Tannic');
+    expect(names).not.toContain('Silky Low Tannin');
+    expect(names).not.toContain('Sweet Dessert');
+  });
+
+  it('filters by tannin_max', async () => {
+    const results = await sqliteAdapter.getWines({ tannin_max: 1 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Silky Low Tannin');
+    expect(names).toContain('Sweet Dessert');
+    expect(names).not.toContain('Grippy Tannic');
+  });
+
+  it('filters by sweetness range', async () => {
+    const results = await sqliteAdapter.getWines({ sweetness_min: 4, sweetness_max: 5 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Sweet Dessert');
+    expect(names).not.toContain('Grippy Tannic');
+    expect(names).not.toContain('Silky Low Tannin');
+  });
+
+  it('combines structural filter with wine_type', async () => {
+    await sqliteAdapter.createWine({ name: 'High Tannin Red', tannin: 5, wine_type: 'red' });
+    await sqliteAdapter.createWine({ name: 'High Tannin White', tannin: 5, wine_type: 'white' });
+    const results = await sqliteAdapter.getWines({ tannin_min: 5, wine_type: 'red' });
+    const names = results.map(w => w.name);
+    expect(names).toContain('High Tannin Red');
+    expect(names).not.toContain('High Tannin White');
+  });
+
+  it('filters by body range', async () => {
+    const results = await sqliteAdapter.getWines({ body_min: 3, body_max: 4 });
+    const names = results.map(w => w.name);
+    expect(names).toContain('Grippy Tannic');
+    expect(names).toContain('Sweet Dessert');
+    expect(names).not.toContain('Silky Low Tannin');
+  });
+});

@@ -128,6 +128,17 @@ export interface WineSearchParams {
   // Multi-level sort: comma-separated "field:dir" pairs, e.g. "drink_until:asc,price:desc"
   // Supported fields: name | producer | price | vintage | drink_from | drink_until | bottles
   sort?: string;
+  // Structural score range filters (0–5 each)
+  acidity_min?: number;
+  acidity_max?: number;
+  tannin_min?: number;
+  tannin_max?: number;
+  sweetness_min?: number;
+  sweetness_max?: number;
+  body_min?: number;
+  body_max?: number;
+  alcohol_str_min?: number;  // alcohol structural score (not ABV %)
+  alcohol_str_max?: number;
 }
 
 export interface WineNote {
