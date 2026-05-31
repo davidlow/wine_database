@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateId, formatPrice, formatDate, wineTypeLabel, wineTypeColor } from '@/lib/utils';
+import { generateId, formatPrice, formatDate, wineTypeLabel, wineTypeColor, wineTypeBorderColor } from '@/lib/utils';
 
 describe('generateId', () => {
   it('returns a non-empty string', () => {
@@ -125,5 +125,27 @@ describe('wineTypeColor', () => {
   it('returns a fallback class for unrecognized type', () => {
     const cls = wineTypeColor('unknown-type');
     expect(cls).toBeTruthy();
+  });
+});
+
+describe('wineTypeBorderColor', () => {
+  it('returns a ring class for each recognized type', () => {
+    const types = ['red', 'white', 'rosé', 'sparkling', 'dessert', 'fortified', 'other'] as const;
+    types.forEach((type) => {
+      const cls = wineTypeBorderColor(type);
+      expect(cls).toMatch(/^ring-/);
+    });
+  });
+
+  it('red has a darker ring than white', () => {
+    expect(wineTypeBorderColor('red')).not.toBe(wineTypeBorderColor('white'));
+  });
+
+  it('returns ring-gray-300 for undefined', () => {
+    expect(wineTypeBorderColor(undefined)).toBe('ring-gray-300');
+  });
+
+  it('returns ring-gray-400 for unrecognized type', () => {
+    expect(wineTypeBorderColor('unknown')).toBe('ring-gray-400');
   });
 });

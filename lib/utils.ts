@@ -58,6 +58,21 @@ export function drinkWindowBadge(status: DrinkStatus): { label: string; cls: str
   return null;
 }
 
+// Border ring color for label images — separate from the image itself so it can be
+// updated independently without reprocessing photos.
+export function wineTypeBorderColor(type: string | undefined): string {
+  const colors: Record<string, string> = {
+    red:       'ring-red-700',
+    white:     'ring-amber-400',
+    'rosé':    'ring-pink-400',
+    sparkling: 'ring-sky-400',
+    dessert:   'ring-amber-500',
+    fortified: 'ring-purple-700',
+    other:     'ring-gray-400',
+  };
+  return type ? (colors[type] ?? 'ring-gray-400') : 'ring-gray-300';
+}
+
 export function wineTypeColor(type: string | undefined): string {
   const colors: Record<string, string> = {
     red: 'bg-red-100 text-red-800',

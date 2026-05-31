@@ -8,7 +8,7 @@ import { useProfile } from '@/hooks/useProfile';
 import type { Wine, CellarInventory, BottleTransaction, WineNote } from '@/types';
 import BottleManager from '@/components/BottleManager';
 import TransactionLog from '@/components/TransactionLog';
-import { cn, wineTypeLabel, wineTypeColor, formatPrice, formatDate } from '@/lib/utils';
+import { cn, wineTypeLabel, wineTypeColor, wineTypeBorderColor, formatPrice, formatDate } from '@/lib/utils';
 
 export default function WineDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -136,9 +136,19 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Wine info */}
       <div className="rounded-lg border bg-card overflow-hidden">
-        {wine.image_url && (
-          <div className="relative h-40 w-full bg-muted">
-            <Image src={wine.image_url} alt={wine.name} fill className="object-contain" />
+        {(wine.label_image || wine.image_url) && (
+          <div className="flex justify-center bg-muted px-4 pt-4 pb-2">
+            {wine.label_image ? (
+              <img
+                src={`data:image/webp;base64,${wine.label_image}`}
+                alt={wine.name}
+                className={cn('h-40 w-auto rounded object-contain ring-4', wineTypeBorderColor(wine.wine_type))}
+              />
+            ) : (
+              <div className={cn('relative h-40 w-28 rounded overflow-hidden ring-4', wineTypeBorderColor(wine.wine_type))}>
+                <Image src={wine.image_url!} alt={wine.name} fill className="object-contain" />
+              </div>
+            )}
           </div>
         )}
         <div className="p-4 space-y-3">

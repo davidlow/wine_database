@@ -2,7 +2,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { MapPin, Calendar, Plus, Wine as WineIcon, GlassWater, Grape } from 'lucide-react';
 import type { Wine, CellarInventory, WineType } from '@/types';
-import { cn, wineTypeLabel, wineTypeColor, formatPrice } from '@/lib/utils';
+import { cn, wineTypeLabel, wineTypeColor, wineTypeBorderColor, formatPrice } from '@/lib/utils';
 
 interface Props {
   wine: Wine;
@@ -21,11 +21,11 @@ const WINE_ICON_CFG: Record<string, { bg: string; iconColor: string; icon: 'wine
   other:     { bg: 'bg-gray-200',   iconColor: 'text-gray-500',   icon: 'wine' },
 };
 
-function WineTypeIcon({ type }: { type?: WineType | null }) {
+function WineTypeIcon({ type, className }: { type?: WineType | null; className?: string }) {
   const cfg = (type && WINE_ICON_CFG[type]) ?? WINE_ICON_CFG.other;
   const Icon = cfg.icon === 'flute' ? GlassWater : cfg.icon === 'grape' ? Grape : WineIcon;
   return (
-    <div className={cn('h-16 w-12 shrink-0 rounded flex items-center justify-center', cfg.bg)}>
+    <div className={cn('h-16 w-12 shrink-0 rounded flex items-center justify-center', cfg.bg, className)}>
       <Icon className={cn('h-7 w-7', cfg.iconColor)} />
     </div>
   );
@@ -55,14 +55,24 @@ export default function WineCard({ wine, inventory, href, onAdd }: Props) {
     </div>
   ) : null;
 
+  const ringCls = cn('ring-2', wineTypeBorderColor(wine.wine_type));
+
   const card = (
     <div className="group flex gap-3 rounded-lg border bg-card p-3 hover:shadow-md transition-shadow">
-      {wine.image_url ? (
-        <div className="relative h-16 w-12 shrink-0 overflow-hidden rounded">
+      {wine.label_image ? (
+        <div className={cn('h-16 w-12 shrink-0 overflow-hidden rounded', ringCls)}>
+          <img
+            src={`data:image/webp;base64,${wine.label_image}`}
+            alt={wine.name}
+            className="h-full w-full object-cover"
+          />
+        </div>
+      ) : wine.image_url ? (
+        <div className={cn('relative h-16 w-12 shrink-0 overflow-hidden rounded', ringCls)}>
           <Image src={wine.image_url} alt={wine.name} fill className="object-cover" />
         </div>
       ) : (
-        <WineTypeIcon type={wine.wine_type} />
+        <WineTypeIcon type={wine.wine_type} className={ringCls} />
       )}
       <div className="flex-1 min-w-0">
         <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors pr-1">

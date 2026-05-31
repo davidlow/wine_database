@@ -37,6 +37,7 @@ export default function ScannerPage() {
   const [savedWineId, setSavedWineId] = useState<string | null>(null);
   const [savedWineName, setSavedWineName] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(true);
+  const [capturedLabelImage, setCapturedLabelImage] = useState<string | null>(null);
 
   const handleDetected = async (barcode: string) => {
     if (processingRef.current) return;
@@ -66,9 +67,11 @@ export default function ScannerPage() {
     setSavedWineId(null);
     setSavedWineName(null);
     setShowScanner(true);
+    setCapturedLabelImage(null);
   };
 
   const handleLabelCapture = async (imageBase64: string) => {
+    setCapturedLabelImage(imageBase64);
     setScanState('analyzing-label');
     setErrorMessage(null);
     try {
@@ -93,10 +96,11 @@ export default function ScannerPage() {
   };
 
   const handleSaveWine = async (data: Omit<Wine, 'id' | 'created_at' | 'updated_at'>) => {
+    const payload = capturedLabelImage ? { ...data, label_image: capturedLabelImage } : data;
     const res = await fetch('/api/wines', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json();
