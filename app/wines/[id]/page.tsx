@@ -3,9 +3,9 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Edit, Trash2, Copy, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Copy, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X, UtensilsCrossed, Plus } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
-import type { Wine, CellarInventory, BottleTransaction, WineNote } from '@/types';
+import type { Wine, CellarInventory, BottleTransaction, WineNote, WineFoodPairing } from '@/types';
 import BottleManager from '@/components/BottleManager';
 import TransactionLog from '@/components/TransactionLog';
 import { cn, wineTypeLabel, wineTypeColor, wineTypeBorderColor, formatPrice, formatDate } from '@/lib/utils';
@@ -17,12 +17,15 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
   const [inventory, setInventory] = useState<CellarInventory[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'inventory' | 'transactions' | 'notes'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'transactions' | 'notes' | 'pairings'>('inventory');
   const [transactions, setTransactions] = useState<BottleTransaction[]>([]);
   const [notes, setNotes] = useState<WineNote[]>([]);
   const [noteText, setNoteText] = useState('');
   const [noteTastedAt, setNoteTastedAt] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const [pairings, setPairings] = useState<WineFoodPairing[]>([]);
+  const [newPairing, setNewPairing] = useState('');
+  const [addingPairing, setAddingPairing] = useState(false);
 
   const loadInventory = async () => {
     if (!profiles.length) return;
@@ -50,13 +53,43 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
     setTransactions(merged);
   };
 
+  const loadPairings = async () => {
+    const res = await fetch(`/api/wines/${id}/pairings`);
+    if (res.ok) setPairings(await res.json());
+  };
+
+  const handleAddPairing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPairing.trim()) return;
+    setAddingPairing(true);
+    try {
+      const res = await fetch(`/api/wines/${id}/pairings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ food: newPairing.trim() }),
+      });
+      if (res.ok) { setNewPairing(''); await loadPairings(); }
+    } finally {
+      setAddingPairing(false);
+    }
+  };
+
+  const handleDeletePairing = async (pairingId: string) => {
+    await fetch(`/api/wines/${id}/pairings`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pairingId }),
+    });
+    await loadPairings();
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const res = await fetch(`/api/wines/${id}`);
         if (res.ok) setWine(await res.json());
-        await Promise.all([loadInventory(), loadTransactions(), loadNotes()]);
+        await Promise.all([loadInventory(), loadTransactions(), loadNotes(), loadPairings()]);
       } finally {
         setLoading(false);
       }
@@ -221,6 +254,36 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             <p className="text-sm text-muted-foreground border-t pt-3">{wine.description}</p>
           )}
 
+          {/* Structural profile */}
+          {(wine.acidity != null || wine.tannin != null || wine.sweetness != null || wine.body != null || wine.alcohol != null) && (
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Structural Profile</p>
+              {([
+                { label: 'Acidity', value: wine.acidity, lo: 'Flat', hi: 'Tart' },
+                { label: 'Tannin', value: wine.tannin, lo: 'Silky', hi: 'Grippy' },
+                { label: 'Sweetness', value: wine.sweetness, lo: 'Dry', hi: 'Sweet' },
+                { label: 'Body', value: wine.body, lo: 'Light', hi: 'Full' },
+                { label: 'Alcohol', value: wine.alcohol, lo: 'Low', hi: 'High' },
+              ]).filter(r => r.value != null).map(({ label, value, lo, hi }) => (
+                <div key={label} className="flex items-center gap-2 text-xs">
+                  <span className="w-16 text-muted-foreground shrink-0">{label}</span>
+                  <span className="w-6 text-[10px] text-muted-foreground text-right shrink-0">{lo}</span>
+                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full"
+                      style={{ width: `${((value ?? 0) / 5) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-6 text-[10px] text-muted-foreground shrink-0">{hi}</span>
+                  <span className="w-3 font-semibold text-right">{value}</span>
+                </div>
+              ))}
+              {wine.fruit_profile && (
+                <p className="text-xs text-muted-foreground mt-1">🍇 {wine.fruit_profile}</p>
+              )}
+            </div>
+          )}
+
           {wine.barcode && (
             <p className="text-xs text-muted-foreground">Barcode: {wine.barcode}</p>
           )}
@@ -238,16 +301,21 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
       {/* Tabs */}
       <div className="space-y-3">
         <div className="flex gap-1 border-b overflow-x-auto">
-          {(['inventory', 'notes', 'transactions'] as const).map((tab) => (
+          {([
+            { key: 'inventory', label: 'Inventory' },
+            { key: 'pairings', label: `Pairings${pairings.length > 0 ? ` (${pairings.length})` : ''}`, icon: <UtensilsCrossed className="h-3.5 w-3.5" /> },
+            { key: 'notes', label: `Notes${notes.length > 0 ? ` (${notes.length})` : ''}`, icon: <NotebookPen className="h-3.5 w-3.5" /> },
+            { key: 'transactions', label: 'Transactions' },
+          ] as const).map(({ key, label, icon }) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn('px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors whitespace-nowrap flex items-center gap-1.5',
-                activeTab === tab ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={cn('px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap flex items-center gap-1.5',
+                activeTab === key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              {tab === 'notes' && <NotebookPen className="h-3.5 w-3.5" />}
-              {tab === 'notes' ? `Notes${notes.length > 0 ? ` (${notes.length})` : ''}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {icon}
+              {label}
             </button>
           ))}
         </div>
@@ -260,6 +328,58 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             onRefresh={loadInventory}
             suggestedPrice={wine.average_price}
           />
+        )}
+
+        {activeTab === 'pairings' && (
+          <div className="space-y-4">
+            {/* Existing pairings */}
+            {pairings.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {pairings.map((p) => (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border',
+                      p.source === 'gemini' ? 'bg-purple-50 border-purple-200 text-purple-800' : 'bg-accent border-border'
+                    )}
+                  >
+                    <UtensilsCrossed className="h-3 w-3 shrink-0" />
+                    <span>{p.food}</span>
+                    <button
+                      onClick={() => handleDeletePairing(p.id)}
+                      className="ml-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                      title="Remove pairing"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No food pairings yet. Add your first below.</p>
+            )}
+
+            {/* Add pairing */}
+            <form onSubmit={handleAddPairing} className="flex gap-2">
+              <input
+                value={newPairing}
+                onChange={(e) => setNewPairing(e.target.value)}
+                placeholder="e.g. grilled steak, mushroom risotto…"
+                className="flex-1 px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                type="submit"
+                disabled={!newPairing.trim() || addingPairing}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0"
+              >
+                {addingPairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Add
+              </button>
+            </form>
+            {pairings.some(p => p.source === 'gemini') && (
+              <p className="text-xs text-muted-foreground">Purple chips were suggested by Gemini AI.</p>
+            )}
+          </div>
         )}
 
         {activeTab === 'notes' && (
