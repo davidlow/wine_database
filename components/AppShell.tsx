@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Wine, ScanLine, Layers, BarChart2, Building2 } from 'lucide-react';
+import { Home, Wine, ScanLine, Layers, BarChart2, Building2, UtensilsCrossed } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
 import { useProfile } from '@/hooks/useProfile';
@@ -59,6 +59,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <ScanLine className="h-4 w-4 shrink-0" />
             Scanner
           </Link>
+          <Link href="/food-pairings" className={navItemCls(isActive('/food-pairings'))}>
+            <UtensilsCrossed className="h-4 w-4 shrink-0" />
+            Food Pairings
+          </Link>
           <Link href="/statistics" className={navItemCls(isActive('/statistics'))}>
             <BarChart2 className="h-4 w-4 shrink-0" />
             Statistics
@@ -105,6 +109,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/scanner" className={mobileNavItemCls(isActive('/scanner'))}>
             <ScanLine className="h-5 w-5" />
             Scanner
+          </Link>
+          <Link href="/food-pairings" className={mobileNavItemCls(isActive('/food-pairings'))}>
+            <UtensilsCrossed className="h-5 w-5" />
+            Pairings
           </Link>
           <Link href="/statistics" className={mobileNavItemCls(isActive('/statistics'))}>
             <BarChart2 className="h-5 w-5" />
