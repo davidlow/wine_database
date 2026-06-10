@@ -13,6 +13,9 @@ import type {
   AddBottleInput,
   RemoveBottleInput,
   MoveBottleInput,
+  FreezerItem,
+  FreezerTransaction,
+  AddFreezerInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
@@ -627,5 +630,72 @@ export const sqliteAdapter: DbAdapter = {
       'SELECT DISTINCT LOWER(food) as food FROM wine_food_pairings ORDER BY food ASC'
     ).all() as { food: string }[];
     return rows.map(r => r.food);
+  },
+
+  // --- Freezer ---
+
+  async getFreezerItems(profileId: string): Promise<FreezerItem[]> {
+    return getDb().prepare(`
+      SELECT * FROM freezer_inventory
+      WHERE profile_id = ? AND quantity > 0
+      ORDER BY eat_by_date ASC
+    `).all(profileId) as FreezerItem[];
+  },
+
+  async addFreezerItem(input: AddFreezerInput, _userId: string): Promise<FreezerItem> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const storedDate = input.stored_date;
+    const eatByDate = `${parseInt(storedDate.slice(0, 4), 10) + 1}${storedDate.slice(4)}`;
+    const item: FreezerItem = {
+      id: generateId(),
+      profile_id: input.profile_id,
+      meat_cut: input.meat_cut,
+      primal: input.primal,
+      quantity: input.quantity,
+      weight_lbs: input.weight_lbs,
+      location: input.location?.trim() ?? '',
+      stored_date: storedDate,
+      eat_by_date: eatByDate,
+      price_per_lb: input.price_per_lb,
+      notes: input.notes,
+      created_at: now,
+      updated_at: now,
+    };
+    const COLS = ['id', 'profile_id', 'meat_cut', 'primal', 'quantity', 'weight_lbs', 'location', 'stored_date', 'eat_by_date', 'price_per_lb', 'notes', 'created_at', 'updated_at'] as const;
+    d.prepare(`
+      INSERT INTO freezer_inventory (id, profile_id, meat_cut, primal, quantity, weight_lbs, location, stored_date, eat_by_date, price_per_lb, notes, created_at, updated_at)
+      VALUES (@id, @profile_id, @meat_cut, @primal, @quantity, @weight_lbs, @location, @stored_date, @eat_by_date, @price_per_lb, @notes, @created_at, @updated_at)
+    `).run(nullify(item as unknown as Record<string, unknown>, COLS));
+    d.prepare(`
+      INSERT INTO freezer_transactions (id, freezer_item_id, profile_id, action, quantity, created_at)
+      VALUES (?, ?, ?, 'add', ?, ?)
+    `).run(generateId(), item.id, item.profile_id, item.quantity, now);
+    return item;
+  },
+
+  async removeFreezerItem(id: string, quantity: number, _userId: string): Promise<FreezerItem> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM freezer_inventory WHERE id = ?').get(id) as FreezerItem | undefined;
+    if (!existing) throw new Error(`Freezer item ${id} not found`);
+    if (quantity > existing.quantity) throw new Error('Cannot remove more packs than available');
+    const now = new Date().toISOString();
+    const newQty = existing.quantity - quantity;
+    d.prepare('UPDATE freezer_inventory SET quantity = ?, updated_at = ? WHERE id = ?').run(newQty, now, id);
+    d.prepare(`
+      INSERT INTO freezer_transactions (id, freezer_item_id, profile_id, action, quantity, created_at)
+      VALUES (?, ?, ?, 'remove', ?, ?)
+    `).run(generateId(), id, existing.profile_id, quantity, now);
+    return { ...existing, quantity: newQty, updated_at: now };
+  },
+
+  async getFreezerTransactions(profileId: string): Promise<FreezerTransaction[]> {
+    return getDb().prepare(`
+      SELECT ft.*, fi.meat_cut
+      FROM freezer_transactions ft
+      JOIN freezer_inventory fi ON fi.id = ft.freezer_item_id
+      WHERE ft.profile_id = ?
+      ORDER BY ft.created_at DESC
+    `).all(profileId) as FreezerTransaction[];
   },
 };

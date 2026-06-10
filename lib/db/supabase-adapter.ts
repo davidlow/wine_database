@@ -11,6 +11,9 @@ import type {
   RemoveBottleInput,
   MoveBottleInput,
   WineFoodPairing,
+  FreezerItem,
+  FreezerTransaction,
+  AddFreezerInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
@@ -533,5 +536,76 @@ export const supabaseAdapter: DbAdapter = {
       .from('wine_food_pairings').select('food').order('food');
     const unique = [...new Set((data ?? []).map((r: { food: string }) => r.food.toLowerCase()))];
     return unique.sort();
+  },
+
+  // --- Freezer ---
+
+  async getFreezerItems(profileId: string): Promise<FreezerItem[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('freezer_inventory')
+      .select('*')
+      .eq('profile_id', profileId)
+      .gt('quantity', 0)
+      .order('eat_by_date', { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as FreezerItem[];
+  },
+
+  async addFreezerItem(input: AddFreezerInput, _userId: string): Promise<FreezerItem> {
+    const now = new Date().toISOString();
+    const storedDate = input.stored_date;
+    const eatByDate = `${parseInt(storedDate.slice(0, 4), 10) + 1}${storedDate.slice(4)}`;
+    const item = {
+      id: generateId(),
+      profile_id: input.profile_id,
+      meat_cut: input.meat_cut,
+      primal: input.primal ?? null,
+      quantity: input.quantity,
+      weight_lbs: input.weight_lbs ?? null,
+      location: input.location?.trim() ?? '',
+      stored_date: storedDate,
+      eat_by_date: eatByDate,
+      price_per_lb: input.price_per_lb ?? null,
+      notes: input.notes ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+    const { error } = await getSupabaseAdmin().from('freezer_inventory').insert(item);
+    if (error) throw error;
+    await getSupabaseAdmin().from('freezer_transactions').insert({
+      id: generateId(), freezer_item_id: item.id, profile_id: item.profile_id,
+      action: 'add', quantity: item.quantity, created_at: now,
+    });
+    return item as FreezerItem;
+  },
+
+  async removeFreezerItem(id: string, quantity: number, _userId: string): Promise<FreezerItem> {
+    const { data: existing, error: fetchErr } = await getSupabaseAdmin()
+      .from('freezer_inventory').select('*').eq('id', id).single();
+    if (fetchErr || !existing) throw new Error(`Freezer item ${id} not found`);
+    if (quantity > existing.quantity) throw new Error('Cannot remove more packs than available');
+    const now = new Date().toISOString();
+    const newQty = existing.quantity - quantity;
+    const { error } = await getSupabaseAdmin()
+      .from('freezer_inventory').update({ quantity: newQty, updated_at: now }).eq('id', id);
+    if (error) throw error;
+    await getSupabaseAdmin().from('freezer_transactions').insert({
+      id: generateId(), freezer_item_id: id, profile_id: existing.profile_id,
+      action: 'remove', quantity, created_at: now,
+    });
+    return { ...existing, quantity: newQty, updated_at: now } as FreezerItem;
+  },
+
+  async getFreezerTransactions(profileId: string): Promise<FreezerTransaction[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('freezer_transactions')
+      .select('*, freezer_inventory(meat_cut)')
+      .eq('profile_id', profileId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map((r: Record<string, unknown> & { freezer_inventory?: { meat_cut: string } }) => {
+      const { freezer_inventory, ...rest } = r;
+      return { ...rest, meat_cut: freezer_inventory?.meat_cut } as unknown as FreezerTransaction;
+    });
   },
 };

@@ -1936,3 +1936,172 @@ describe('Structural score range filters', () => {
     expect(names).not.toContain('Silky Low Tannin');
   });
 });
+
+// ─── Freezer inventory ────────────────────────────────────────────────────────
+
+describe('Freezer inventory', () => {
+  const userId = 'freezer-test-user';
+  let profileId: string;
+
+  beforeEach(async () => {
+    closeSqliteDb();
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Freezer Test Profile' });
+    profileId = profile.id;
+  });
+
+  it('adds a freezer item and returns it with correct fields', async () => {
+    const item = await sqliteAdapter.addFreezerItem({
+      profile_id: profileId,
+      meat_cut: 'Beef Ribeye Steak',
+      primal: 'Rib',
+      quantity: 2,
+      weight_lbs: 1.5,
+      location: 'Garage Freezer',
+      stored_date: '2026-01-15',
+      price_per_lb: 18.99,
+    }, userId);
+
+    expect(item.id).toBeDefined();
+    expect(item.meat_cut).toBe('Beef Ribeye Steak');
+    expect(item.primal).toBe('Rib');
+    expect(item.quantity).toBe(2);
+    expect(item.weight_lbs).toBe(1.5);
+    expect(item.location).toBe('Garage Freezer');
+    expect(item.stored_date).toBe('2026-01-15');
+    expect(item.price_per_lb).toBe(18.99);
+  });
+
+  it('computes eat_by_date as exactly 1 year after stored_date', async () => {
+    const item = await sqliteAdapter.addFreezerItem({
+      profile_id: profileId,
+      meat_cut: 'Beef Chuck Roast',
+      quantity: 1,
+      stored_date: '2026-03-10',
+    }, userId);
+
+    expect(item.eat_by_date).toBe('2027-03-10');
+  });
+
+  it('eat_by_date handles leap years correctly', async () => {
+    const item = await sqliteAdapter.addFreezerItem({
+      profile_id: profileId,
+      meat_cut: 'Pork Butt',
+      quantity: 1,
+      stored_date: '2024-02-29',
+    }, userId);
+
+    expect(item.eat_by_date).toBe('2025-02-29');
+  });
+
+  it('creates item with only required fields', async () => {
+    const item = await sqliteAdapter.addFreezerItem({
+      profile_id: profileId,
+      meat_cut: 'Pork Loin Chop',
+      quantity: 3,
+      stored_date: '2026-06-01',
+    }, userId);
+
+    expect(item.id).toBeDefined();
+    expect(item.quantity).toBe(3);
+    expect(item.location).toBe('');
+    expect(item.primal).toBeFalsy();
+    expect(item.weight_lbs).toBeFalsy();
+    expect(item.price_per_lb).toBeFalsy();
+  });
+
+  it('getFreezerItems returns items sorted by eat_by_date ascending', async () => {
+    await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef NY Strip Steak', quantity: 1, stored_date: '2026-06-01' }, userId);
+    await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Chuck Stew', quantity: 1, stored_date: '2025-01-01' }, userId);
+    await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Pork Loin Roast', quantity: 1, stored_date: '2026-01-01' }, userId);
+
+    const items = await sqliteAdapter.getFreezerItems(profileId);
+    expect(items[0].eat_by_date < items[1].eat_by_date).toBe(true);
+    expect(items[1].eat_by_date <= items[2].eat_by_date).toBe(true);
+  });
+
+  it('getFreezerItems excludes items with quantity 0', async () => {
+    const item = await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Top Round', quantity: 1, stored_date: '2026-01-01' }, userId);
+    await sqliteAdapter.removeFreezerItem(item.id, 1, userId);
+
+    const items = await sqliteAdapter.getFreezerItems(profileId);
+    expect(items.find(i => i.id === item.id)).toBeUndefined();
+  });
+
+  it('records an add transaction when item is created', async () => {
+    const item = await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Short Rib', quantity: 3, stored_date: '2026-01-01' }, userId);
+
+    const txs = await sqliteAdapter.getFreezerTransactions(profileId);
+    const addTx = txs.find(t => t.freezer_item_id === item.id && t.action === 'add');
+    expect(addTx).toBeDefined();
+    expect(addTx!.quantity).toBe(3);
+  });
+
+  it('removeFreezerItem decrements quantity', async () => {
+    const item = await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Tri-Tip', quantity: 4, stored_date: '2026-01-01' }, userId);
+    const updated = await sqliteAdapter.removeFreezerItem(item.id, 2, userId);
+
+    expect(updated.quantity).toBe(2);
+    const items = await sqliteAdapter.getFreezerItems(profileId);
+    expect(items.find(i => i.id === item.id)!.quantity).toBe(2);
+  });
+
+  it('removeFreezerItem records a remove transaction', async () => {
+    const item = await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Top Sirloin', quantity: 3, stored_date: '2026-01-01' }, userId);
+    await sqliteAdapter.removeFreezerItem(item.id, 1, userId);
+
+    const txs = await sqliteAdapter.getFreezerTransactions(profileId);
+    const removeTx = txs.find(t => t.freezer_item_id === item.id && t.action === 'remove');
+    expect(removeTx).toBeDefined();
+    expect(removeTx!.quantity).toBe(1);
+  });
+
+  it('removeFreezerItem throws when removing more than available', async () => {
+    const item = await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef NY Strip Roast', quantity: 2, stored_date: '2026-01-01' }, userId);
+
+    await expect(sqliteAdapter.removeFreezerItem(item.id, 5, userId)).rejects.toThrow();
+  });
+
+  it('removeFreezerItem throws for non-existent item', async () => {
+    await expect(sqliteAdapter.removeFreezerItem('nonexistent', 1, userId)).rejects.toThrow();
+  });
+
+  it('getFreezerTransactions joins meat_cut from freezer_inventory', async () => {
+    const item = await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Pork Butt', quantity: 2, stored_date: '2026-01-01' }, userId);
+    await sqliteAdapter.removeFreezerItem(item.id, 1, userId);
+
+    const txs = await sqliteAdapter.getFreezerTransactions(profileId);
+    expect(txs.every(t => t.meat_cut === 'Pork Butt')).toBe(true);
+  });
+
+  it('getFreezerItems is scoped to profile', async () => {
+    const profile2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Other Profile' });
+    await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Ribeye Steak', quantity: 1, stored_date: '2026-01-01' }, userId);
+    await sqliteAdapter.addFreezerItem({ profile_id: profile2.id, meat_cut: 'Pork Loin Chop', quantity: 1, stored_date: '2026-01-01' }, userId);
+
+    const items1 = await sqliteAdapter.getFreezerItems(profileId);
+    const items2 = await sqliteAdapter.getFreezerItems(profile2.id);
+    expect(items1.every(i => i.profile_id === profileId)).toBe(true);
+    expect(items2.every(i => i.profile_id === profile2.id)).toBe(true);
+    expect(items1.some(i => i.meat_cut === 'Pork Loin Chop')).toBe(false);
+  });
+
+  it('getFreezerTransactions is scoped to profile', async () => {
+    const profile2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Other Profile 2' });
+    await sqliteAdapter.addFreezerItem({ profile_id: profileId, meat_cut: 'Beef Chuck Steak', quantity: 2, stored_date: '2026-01-01' }, userId);
+    await sqliteAdapter.addFreezerItem({ profile_id: profile2.id, meat_cut: 'Pork Butt', quantity: 1, stored_date: '2026-01-01' }, userId);
+
+    const txs1 = await sqliteAdapter.getFreezerTransactions(profileId);
+    const txs2 = await sqliteAdapter.getFreezerTransactions(profile2.id);
+    expect(txs1.every(t => t.profile_id === profileId)).toBe(true);
+    expect(txs2.every(t => t.profile_id === profile2.id)).toBe(true);
+  });
+
+  it('deleting a profile cascades to freezer inventory', async () => {
+    const tempProfile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Temp Profile' });
+    await sqliteAdapter.addFreezerItem({ profile_id: tempProfile.id, meat_cut: 'Beef Ribeye Steak', quantity: 2, stored_date: '2026-01-01' }, userId);
+    await sqliteAdapter.deleteProfile(tempProfile.id, userId);
+
+    const items = await sqliteAdapter.getFreezerItems(tempProfile.id);
+    expect(items).toHaveLength(0);
+  });
+});

@@ -214,6 +214,45 @@ export interface BulkScanItem {
   confidence?: number;
 }
 
+export interface FreezerItem {
+  id: string;
+  profile_id: string;
+  meat_cut: string;
+  primal?: string;
+  quantity: number;
+  weight_lbs?: number;
+  location: string;
+  stored_date: string;
+  eat_by_date: string;
+  price_per_lb?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FreezerTransaction {
+  id: string;
+  freezer_item_id: string;
+  profile_id: string;
+  action: 'add' | 'remove';
+  quantity: number;
+  notes?: string;
+  created_at: string;
+  meat_cut?: string;
+}
+
+export interface AddFreezerInput {
+  profile_id: string;
+  meat_cut: string;
+  primal?: string;
+  quantity: number;
+  weight_lbs?: number;
+  location?: string;
+  stored_date: string;
+  price_per_lb?: number;
+  notes?: string;
+}
+
 export interface DbAdapter {
   // Wines
   getWines(params: WineSearchParams): Promise<Wine[]>;
@@ -265,4 +304,10 @@ export interface DbAdapter {
   deleteFoodPairing(id: string): Promise<void>;
   getWinesWithPairings(foods: string[]): Promise<Wine[]>;
   getAllFoods(): Promise<string[]>;
+
+  // Freezer inventory
+  getFreezerItems(profileId: string): Promise<FreezerItem[]>;
+  addFreezerItem(input: AddFreezerInput, userId: string): Promise<FreezerItem>;
+  removeFreezerItem(id: string, quantity: number, userId: string): Promise<FreezerItem>;
+  getFreezerTransactions(profileId: string): Promise<FreezerTransaction[]>;
 }

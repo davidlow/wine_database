@@ -98,3 +98,35 @@ CREATE INDEX IF NOT EXISTS idx_cellar_profile_id ON cellar_inventory(profile_id)
 CREATE INDEX IF NOT EXISTS idx_transactions_wine_id ON bottle_transactions(wine_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_profile_id ON bottle_transactions(profile_id);
 CREATE INDEX IF NOT EXISTS idx_locations_profile_id ON locations(profile_id);
+
+-- Frozen meat inventory
+CREATE TABLE IF NOT EXISTS freezer_inventory (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  meat_cut TEXT NOT NULL,
+  primal TEXT,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  weight_lbs REAL,
+  location TEXT NOT NULL DEFAULT '',
+  stored_date TEXT NOT NULL,
+  eat_by_date TEXT NOT NULL,
+  price_per_lb REAL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CONSTRAINT positive_quantity CHECK (quantity >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS freezer_transactions (
+  id TEXT PRIMARY KEY,
+  freezer_item_id TEXT NOT NULL REFERENCES freezer_inventory(id) ON DELETE CASCADE,
+  profile_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('add', 'remove')),
+  quantity INTEGER NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_freezer_profile_id ON freezer_inventory(profile_id);
+CREATE INDEX IF NOT EXISTS idx_freezer_tx_item_id ON freezer_transactions(freezer_item_id);
+CREATE INDEX IF NOT EXISTS idx_freezer_tx_profile_id ON freezer_transactions(profile_id);
