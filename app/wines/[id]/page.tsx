@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, use, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, Edit, Trash2, Copy, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X, UtensilsCrossed, Plus } from 'lucide-react';
@@ -306,7 +306,7 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             { key: 'pairings', label: `Pairings${pairings.length > 0 ? ` (${pairings.length})` : ''}`, icon: <UtensilsCrossed className="h-3.5 w-3.5" /> },
             { key: 'notes', label: `Notes${notes.length > 0 ? ` (${notes.length})` : ''}`, icon: <NotebookPen className="h-3.5 w-3.5" /> },
             { key: 'transactions', label: 'Transactions' },
-          ] as const).map(({ key, label, icon }) => (
+          ] as { key: typeof activeTab; label: string; icon?: ReactNode }[]).map(({ key, label, icon }) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}

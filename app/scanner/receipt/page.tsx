@@ -34,7 +34,7 @@ type Phase = 'idle' | 'analyzing' | 'reviewing' | 'adding' | 'done' | 'error';
 function useWineSearch() {
   const [results, setResults] = useState<Wine[]>([]);
   const [loading, setLoading] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout>>();
+  const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const search = useCallback((q: string) => {
     clearTimeout(debounce.current);

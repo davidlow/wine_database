@@ -14,16 +14,19 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
-    { name: 'mobile-safari', use: { ...devices['iPhone 12'] } },
-  ],
+  projects: process.env.CI
+    ? [
+        { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+        { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
+        { name: 'mobile-safari', use: { ...devices['iPhone 12'] } },
+      ]
+    : [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 
   webServer: {
-    command: 'npm run dev',
+    command: 'npm run build && npm run start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
+    timeout: 300000,
     env: {
       DATABASE_PROVIDER: 'sqlite',
       SQLITE_DB_PATH: './wine-test.db',

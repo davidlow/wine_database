@@ -72,7 +72,8 @@ test.describe('Wine Catalog', () => {
     await page.getByRole('button', { name: /update wine/i }).click();
 
     await page.waitForURL(/\/wines\/[a-f0-9-]+$/);
-    await expect(page.locator('h2').filter({ hasText: 'Edited Wine Name' })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('h2').filter({ hasText: 'Edited Wine Name' })).toBeVisible({ timeout: 10000 });
   });
 
   test('can delete a wine via API', async ({ request }) => {

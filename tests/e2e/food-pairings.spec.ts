@@ -91,9 +91,10 @@ test.describe('Food Pairings', () => {
     const wine = await wineRes.json();
 
     await page.goto(`/wines/${wine.id}`);
+    await page.waitForLoadState('networkidle');
     // Click the Pairings tab (use button role to avoid matching nav links)
     await page.getByRole('button', { name: /Pairings/ }).click();
-    await expect(page.getByPlaceholder(/grilled steak/i)).toBeVisible();
+    await expect(page.getByPlaceholder(/grilled steak/i)).toBeVisible({ timeout: 10000 });
 
     await request.delete(`/api/wines/${wine.id}`);
   });
@@ -104,6 +105,7 @@ test.describe('Food Pairings', () => {
     const wine = await wineRes.json();
 
     await page.goto(`/wines/${wine.id}`);
+    await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: /Pairings/ }).click();
 
     await page.getByPlaceholder(/grilled steak/i).fill('roasted lamb');

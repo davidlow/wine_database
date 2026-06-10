@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateId, formatPrice, formatDate, wineTypeLabel, wineTypeColor, wineTypeBorderColor } from '@/lib/utils';
+import { generateId, formatPrice, formatDate, wineTypeLabel, wineTypeColor, wineTypeBorderColor, drinkWindowStatus, drinkWindowBadge, cn } from '@/lib/utils';
 
 describe('generateId', () => {
   it('returns a non-empty string', () => {
@@ -147,5 +147,97 @@ describe('wineTypeBorderColor', () => {
 
   it('returns ring-gray-400 for unrecognized type', () => {
     expect(wineTypeBorderColor('unknown')).toBe('ring-gray-400');
+  });
+});
+
+describe('drinkWindowStatus', () => {
+  it('returns null when both drinkFromYear and drinkByYear are null', () => {
+    expect(drinkWindowStatus(null, null)).toBeNull();
+    expect(drinkWindowStatus(undefined, undefined)).toBeNull();
+  });
+
+  it('returns past_peak when currentYear > drinkByYear', () => {
+    expect(drinkWindowStatus(2010, 2020, 2021)).toBe('past_peak');
+    expect(drinkWindowStatus(null, 2015, 2025)).toBe('past_peak');
+  });
+
+  it('returns past_peak when currentYear equals drinkByYear + 1', () => {
+    expect(drinkWindowStatus(2005, 2020, 2021)).toBe('past_peak');
+  });
+
+  it('returns too_young when currentYear < drinkFromYear', () => {
+    expect(drinkWindowStatus(2030, 2040, 2025)).toBe('too_young');
+    expect(drinkWindowStatus(2030, null, 2025)).toBe('too_young');
+  });
+
+  it('returns in_window when currentYear is within the drink window', () => {
+    expect(drinkWindowStatus(2020, 2030, 2025)).toBe('in_window');
+  });
+
+  it('returns in_window when only drinkByYear is set and not yet past', () => {
+    expect(drinkWindowStatus(null, 2030, 2025)).toBe('in_window');
+    expect(drinkWindowStatus(undefined, 2030, 2025)).toBe('in_window');
+  });
+
+  it('returns in_window when only drinkFromYear is set and already reached', () => {
+    expect(drinkWindowStatus(2020, null, 2025)).toBe('in_window');
+  });
+
+  it('uses the real current year when currentYear is omitted', () => {
+    const result = drinkWindowStatus(1900, 2000);
+    expect(result).toBe('past_peak');
+  });
+});
+
+describe('drinkWindowBadge', () => {
+  it('returns null for null status', () => {
+    expect(drinkWindowBadge(null)).toBeNull();
+  });
+
+  it('returns Past Peak badge for past_peak', () => {
+    const badge = drinkWindowBadge('past_peak');
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe('Past Peak');
+    expect(badge!.cls).toContain('red');
+  });
+
+  it('returns Too Young badge for too_young', () => {
+    const badge = drinkWindowBadge('too_young');
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe('Too Young');
+    expect(badge!.cls).toContain('blue');
+  });
+
+  it('returns In Window badge for in_window', () => {
+    const badge = drinkWindowBadge('in_window');
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe('In Window');
+    expect(badge!.cls).toContain('green');
+  });
+
+  it('all badges have both label and cls properties', () => {
+    const statuses = ['past_peak', 'too_young', 'in_window'] as const;
+    for (const status of statuses) {
+      const badge = drinkWindowBadge(status);
+      expect(badge).toHaveProperty('label');
+      expect(badge).toHaveProperty('cls');
+      expect(badge!.label.length).toBeGreaterThan(0);
+      expect(badge!.cls.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('cn', () => {
+  it('merges class strings', () => {
+    expect(cn('foo', 'bar')).toBe('foo bar');
+  });
+
+  it('resolves Tailwind conflicts (last wins)', () => {
+    const result = cn('p-2', 'p-4');
+    expect(result).toBe('p-4');
+  });
+
+  it('ignores falsy values', () => {
+    expect(cn('foo', false && 'bar', null, undefined, 'baz')).toBe('foo baz');
   });
 });
