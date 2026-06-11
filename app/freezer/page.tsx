@@ -470,6 +470,8 @@ export default function FreezerPage() {
   const totalPacks = items.reduce((s, i) => s + i.quantity, 0);
   const hasPriceData = items.some(i => i.price_per_lb != null);
   const removeTxs = txs.filter(t => t.action === 'remove');
+  const pastBestByItems = items.filter(i => i.eat_by_date < TODAY);
+  const hasSearch = searchQuery.trim() !== '';
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -511,37 +513,37 @@ export default function FreezerPage() {
         </div>
       )}
 
-      {/* ── Reorder monitor ── */}
-      {!loading && reorderCuts.length > 0 && (
-        <div className="rounded-lg border bg-card">
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Reorder Monitor</h3>
-            <span className="text-xs text-muted-foreground">top cuts by usage</span>
+      {/* ── Past best-by date ── */}
+      {!loading && pastBestByItems.length > 0 && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5">
+          <div className="px-4 py-3 border-b border-destructive/30 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-destructive">Past Best-By Date</h3>
+            <span className="text-xs text-destructive/70">{pastBestByItems.reduce((s, i) => s + i.quantity, 0)} packs</span>
           </div>
-          <div className="px-4 py-2 space-y-1">
-            <div className="grid grid-cols-[1fr_5rem_5rem_5rem] gap-2 text-xs text-muted-foreground pb-1 border-b">
-              <span>Cut</span>
-              <span className="text-right">In stock</span>
-              <span className="text-right">Rate/mo</span>
-              <span className="text-right">Supply</span>
-            </div>
-            {reorderCuts.map(cut => {
-              const supply = cut.monthsSupply;
-              const supplyColor = supply == null ? 'text-muted-foreground'
-                : supply < 0.5 ? 'text-destructive font-semibold'
-                : supply < 1.5 ? 'text-amber-600 font-medium'
-                : 'text-green-600';
-              return (
-                <div key={cut.name} className="grid grid-cols-[1fr_5rem_5rem_5rem] gap-2 text-sm items-center py-1">
-                  <span className="truncate">{cut.name}</span>
-                  <span className="text-right tabular-nums">{cut.currentStock} pk</span>
-                  <span className="text-right tabular-nums text-muted-foreground">{cut.monthlyRate.toFixed(1)}</span>
-                  <span className={cn('text-right tabular-nums', supplyColor)}>
-                    {supply == null ? '—' : supply < 0.1 ? 'Out' : `${supply.toFixed(1)} mo`}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="divide-y divide-destructive/10">
+            {pastBestByItems
+              .sort((a, b) => a.eat_by_date.localeCompare(b.eat_by_date))
+              .map(item => {
+                const daysOver = Math.floor((Date.now() - new Date(item.eat_by_date + 'T00:00:00').getTime()) / 86_400_000);
+                return (
+                  <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.meat_cut}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.location || 'Unlocated'} · best by {formatDate(item.eat_by_date)}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-destructive shrink-0">{daysOver}d over</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{item.quantity} pk</span>
+                    <button
+                      onClick={() => { setEditItem(item); setEditForm(itemToForm(item)); setEditError(null); }}
+                      className="text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors shrink-0"
+                    >
+                      <Edit2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
@@ -560,12 +562,8 @@ export default function FreezerPage() {
         </div>
       )}
 
-      {/* ── Location filter + inventory ── */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
+      {/* ── Search results (only when a query is active) ── */}
+      {!loading && hasSearch && (
         <div className="space-y-3">
           {/* Location pills */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -604,34 +602,26 @@ export default function FreezerPage() {
           </div>
 
           {/* Sort bar */}
-          {items.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground shrink-0">Sort:</label>
-              <select
-                value={sortBy}
-                onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                className="h-7 border rounded text-xs px-2 bg-background"
-              >
-                <option value="oldest">Oldest stored first (eat next)</option>
-                <option value="newest">Newest stored first</option>
-                <option value="most">Most packs first</option>
-                <option value="least">Fewest packs first</option>
-                <option value="az">A – Z</option>
-              </select>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground shrink-0">Sort:</label>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as typeof sortBy)}
+              className="h-7 border rounded text-xs px-2 bg-background"
+            >
+              <option value="oldest">Oldest stored first (eat next)</option>
+              <option value="newest">Newest stored first</option>
+              <option value="most">Most packs first</option>
+              <option value="least">Fewest packs first</option>
+              <option value="az">A – Z</option>
+            </select>
+          </div>
 
           {/* Items */}
           {sortedItems.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground border border-dashed rounded-lg">
-              <Snowflake className="h-8 w-8 mx-auto mb-3 opacity-30" />
-              {items.length === 0
-                ? <><p className="text-sm">No items yet.</p><p className="text-xs mt-1">Click &quot;Add Item&quot; to get started.</p></>
-                : searchQuery.trim()
-                ? <><p className="text-sm">No cuts match &ldquo;{searchQuery.trim()}&rdquo;{selectedLocs.size > 0 ? ' in the selected freezers' : ''}.</p>
-                    <button onClick={() => setSearchQuery('')} className="text-xs text-primary mt-1 hover:underline">Clear search</button></>
-                : <p className="text-sm">No items in the selected freezers.</p>
-              }
+            <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
+              <p className="text-sm">No cuts match &ldquo;{searchQuery.trim()}&rdquo;{selectedLocs.size > 0 ? ' in the selected freezers' : ''}.</p>
+              <button onClick={() => setSearchQuery('')} className="text-xs text-primary mt-1 hover:underline">Clear search</button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -686,6 +676,41 @@ export default function FreezerPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Reorder monitor ── */}
+      {!loading && reorderCuts.length > 0 && (
+        <div className="rounded-lg border bg-card">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Reorder Monitor</h3>
+            <span className="text-xs text-muted-foreground">top cuts by usage</span>
+          </div>
+          <div className="px-4 py-2 space-y-1">
+            <div className="grid grid-cols-[1fr_5rem_5rem_5rem] gap-2 text-xs text-muted-foreground pb-1 border-b">
+              <span>Cut</span>
+              <span className="text-right">In stock</span>
+              <span className="text-right">Rate/mo</span>
+              <span className="text-right">Supply</span>
+            </div>
+            {reorderCuts.map(cut => {
+              const supply = cut.monthsSupply;
+              const supplyColor = supply == null ? 'text-muted-foreground'
+                : supply < 0.5 ? 'text-destructive font-semibold'
+                : supply < 1.5 ? 'text-amber-600 font-medium'
+                : 'text-green-600';
+              return (
+                <div key={cut.name} className="grid grid-cols-[1fr_5rem_5rem_5rem] gap-2 text-sm items-center py-1">
+                  <span className="truncate">{cut.name}</span>
+                  <span className="text-right tabular-nums">{cut.currentStock} pk</span>
+                  <span className="text-right tabular-nums text-muted-foreground">{cut.monthlyRate.toFixed(1)}</span>
+                  <span className={cn('text-right tabular-nums', supplyColor)}>
+                    {supply == null ? '—' : supply < 0.1 ? 'Out' : `${supply.toFixed(1)} mo`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
