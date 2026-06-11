@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,6 +10,9 @@ export async function GET(request: NextRequest) {
 
     const profileId = request.nextUrl.searchParams.get('profile_id');
     if (!profileId) return NextResponse.json({ error: 'profile_id required' }, { status: 400 });
+
+    const denied = await checkProfileAccess(profileId, userId, 'read');
+    if (denied) return denied;
 
     const db = await getDb();
     const locations = await db.getLocations(profileId);
@@ -27,6 +31,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     if (!body.profile_id) return NextResponse.json({ error: 'profile_id required' }, { status: 400 });
     if (!body.name?.trim()) return NextResponse.json({ error: 'name required' }, { status: 400 });
+
+    const denied = await checkProfileAccess(body.profile_id, userId, 'write');
+    if (denied) return denied;
 
     const db = await getDb();
     const location = await db.createLocation({

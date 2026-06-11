@@ -7,6 +7,7 @@ import type {
   Profile,
   Location,
   CellarInventory,
+  CellarShare,
   BottleTransaction,
   WineNote,
   WineSearchParams,
@@ -252,11 +253,36 @@ export const sqliteAdapter: DbAdapter = {
   // --- Profiles ---
 
   async getProfiles(userId: string): Promise<Profile[]> {
-    return getDb().prepare('SELECT * FROM profiles WHERE user_id = ? ORDER BY name ASC').all(userId) as Profile[];
+    const d = getDb();
+    type RawProfile = Omit<Profile, 'is_owner'> & { is_owner: number };
+    const owned = d.prepare(
+      "SELECT *, 1 as is_owner, 'owner' as permission FROM profiles WHERE user_id = ? ORDER BY name ASC"
+    ).all(userId) as RawProfile[];
+    const shared = d.prepare(`
+      SELECT p.*, 0 as is_owner, s.permission
+      FROM profiles p
+      JOIN cellar_shares s ON s.profile_id = p.id
+      WHERE s.shared_with_user_id = ?
+      ORDER BY p.name ASC
+    `).all(userId) as RawProfile[];
+    return [...owned, ...shared].map(p => ({ ...p, is_owner: p.is_owner === 1 }));
   },
 
   async getProfileById(id: string, userId: string): Promise<Profile | null> {
-    return (getDb().prepare('SELECT * FROM profiles WHERE id = ? AND user_id = ?').get(id, userId) as Profile | undefined) ?? null;
+    const d = getDb();
+    type RawProfile = Omit<Profile, 'is_owner'> & { is_owner: number };
+    const owned = d.prepare(
+      "SELECT *, 1 as is_owner, 'owner' as permission FROM profiles WHERE id = ? AND user_id = ?"
+    ).get(id, userId) as RawProfile | undefined;
+    if (owned) return { ...owned, is_owner: true };
+    const shared = d.prepare(`
+      SELECT p.*, 0 as is_owner, s.permission
+      FROM profiles p
+      JOIN cellar_shares s ON s.profile_id = p.id
+      WHERE p.id = ? AND s.shared_with_user_id = ?
+    `).get(id, userId) as RawProfile | undefined;
+    if (shared) return { ...shared, is_owner: false };
+    return null;
   },
 
   async createProfile(data): Promise<Profile> {
@@ -689,6 +715,34 @@ export const sqliteAdapter: DbAdapter = {
     return { ...existing, quantity: newQty, updated_at: now };
   },
 
+  async updateFreezerItem(id: string, updates: Partial<Pick<FreezerItem, 'meat_cut' | 'primal' | 'quantity' | 'weight_lbs' | 'location' | 'stored_date' | 'price_per_lb' | 'notes'>>): Promise<FreezerItem> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM freezer_inventory WHERE id = ?').get(id) as FreezerItem | undefined;
+    if (!existing) throw new Error(`Freezer item ${id} not found`);
+    const now = new Date().toISOString();
+    const storedDate = updates.stored_date ?? existing.stored_date;
+    const eatByDate = `${parseInt(storedDate.slice(0, 4), 10) + 1}${storedDate.slice(4)}`;
+    d.prepare(`
+      UPDATE freezer_inventory
+      SET meat_cut = ?, primal = ?, quantity = ?, weight_lbs = ?, location = ?,
+          stored_date = ?, eat_by_date = ?, price_per_lb = ?, notes = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      updates.meat_cut ?? existing.meat_cut,
+      updates.primal ?? existing.primal ?? null,
+      updates.quantity ?? existing.quantity,
+      updates.weight_lbs ?? existing.weight_lbs ?? null,
+      updates.location ?? existing.location,
+      storedDate,
+      eatByDate,
+      updates.price_per_lb ?? existing.price_per_lb ?? null,
+      updates.notes ?? existing.notes ?? null,
+      now,
+      id,
+    );
+    return d.prepare('SELECT * FROM freezer_inventory WHERE id = ?').get(id) as FreezerItem;
+  },
+
   async getFreezerTransactions(profileId: string): Promise<FreezerTransaction[]> {
     return getDb().prepare(`
       SELECT ft.*, fi.meat_cut
@@ -697,5 +751,59 @@ export const sqliteAdapter: DbAdapter = {
       WHERE ft.profile_id = ?
       ORDER BY ft.created_at DESC
     `).all(profileId) as FreezerTransaction[];
+  },
+
+  // --- Sharing ---
+
+  async getProfilePermission(profileId: string, userId: string): Promise<'owner' | 'read' | 'write' | null> {
+    const d = getDb();
+    const owned = d.prepare('SELECT 1 FROM profiles WHERE id = ? AND user_id = ?').get(profileId, userId);
+    if (owned) return 'owner';
+    const share = d.prepare('SELECT permission FROM cellar_shares WHERE profile_id = ? AND shared_with_user_id = ?').get(profileId, userId) as { permission: string } | undefined;
+    return (share?.permission as 'read' | 'write') ?? null;
+  },
+
+  async getSharesForProfile(profileId: string): Promise<CellarShare[]> {
+    return getDb().prepare('SELECT * FROM cellar_shares WHERE profile_id = ? ORDER BY created_at ASC').all(profileId) as CellarShare[];
+  },
+
+  async createShare(profileId: string, ownerUserId: string, sharedWithUserId: string, sharedWithEmail: string, permission: 'read' | 'write'): Promise<CellarShare> {
+    const share: CellarShare = {
+      id: generateId(),
+      profile_id: profileId,
+      owner_user_id: ownerUserId,
+      shared_with_user_id: sharedWithUserId,
+      shared_with_email: sharedWithEmail,
+      permission,
+      created_at: new Date().toISOString(),
+    };
+    getDb().prepare(`
+      INSERT INTO cellar_shares (id, profile_id, owner_user_id, shared_with_user_id, shared_with_email, permission, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(share.id, share.profile_id, share.owner_user_id, share.shared_with_user_id, share.shared_with_email, share.permission, share.created_at);
+    return share;
+  },
+
+  async deleteShare(shareId: string, ownerUserId: string): Promise<void> {
+    getDb().prepare('DELETE FROM cellar_shares WHERE id = ? AND owner_user_id = ?').run(shareId, ownerUserId);
+  },
+
+  async getUserByEmail(_email: string): Promise<{ id: string; email: string } | null> {
+    return null; // SQLite has no user directory; sharing works by known user IDs only
+  },
+
+  async getInventoryProfileId(inventoryId: string): Promise<string | null> {
+    const row = getDb().prepare('SELECT profile_id FROM cellar_inventory WHERE id = ?').get(inventoryId) as { profile_id: string } | undefined;
+    return row?.profile_id ?? null;
+  },
+
+  async getLocationProfileId(locationId: string): Promise<string | null> {
+    const row = getDb().prepare('SELECT profile_id FROM locations WHERE id = ?').get(locationId) as { profile_id: string } | undefined;
+    return row?.profile_id ?? null;
+  },
+
+  async getFreezerItemProfileId(itemId: string): Promise<string | null> {
+    const row = getDb().prepare('SELECT profile_id FROM freezer_inventory WHERE id = ?').get(itemId) as { profile_id: string } | undefined;
+    return row?.profile_id ?? null;
   },
 };

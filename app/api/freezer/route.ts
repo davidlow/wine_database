@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,6 +10,9 @@ export async function GET(request: NextRequest) {
 
     const profileId = request.nextUrl.searchParams.get('profile_id');
     if (!profileId) return NextResponse.json({ error: 'profile_id required' }, { status: 400 });
+
+    const denied = await checkProfileAccess(profileId, userId, 'read');
+    if (denied) return denied;
 
     const db = await getDb();
     const items = await db.getFreezerItems(profileId);
@@ -29,6 +33,9 @@ export async function POST(request: NextRequest) {
     if (!body.meat_cut?.trim()) return NextResponse.json({ error: 'meat_cut required' }, { status: 400 });
     if (!body.stored_date) return NextResponse.json({ error: 'stored_date required' }, { status: 400 });
     if (!body.quantity || body.quantity < 1) return NextResponse.json({ error: 'quantity must be at least 1' }, { status: 400 });
+
+    const denied = await checkProfileAccess(body.profile_id, userId, 'write');
+    if (denied) return denied;
 
     const db = await getDb();
     const item = await db.addFreezerItem({

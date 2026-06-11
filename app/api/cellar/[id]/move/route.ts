@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,6 +16,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (!body.new_location?.trim()) return NextResponse.json({ error: 'new_location required' }, { status: 400 });
 
     const db = await getDb();
+
+    const profileId = await db.getInventoryProfileId(id);
+    if (!profileId) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const denied = await checkProfileAccess(profileId, userId, 'write');
+    if (denied) return denied;
+
     await db.moveBottle({
       cellar_inventory_id: id,
       new_location: body.new_location.trim(),

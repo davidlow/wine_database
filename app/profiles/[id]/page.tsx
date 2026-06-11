@@ -4,9 +4,10 @@ import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Check, ChevronDown, ChevronRight, Edit2,
-  Loader2, MapPin, PackagePlus, Plus, SkipForward, Trash2, Wrench, Wine, X,
+  Loader2, MapPin, PackagePlus, Plus, Share2, SkipForward, Trash2, Wrench, Wine, X,
 } from 'lucide-react';
 import type { CellarInventory, Location, Profile, BottleTransaction } from '@/types';
+import SharePanel from '@/components/SharePanel';
 import { useProfile } from '@/hooks/useProfile';
 import TransactionLog from '@/components/TransactionLog';
 import { cn, drinkWindowStatus } from '@/lib/utils';
@@ -396,7 +397,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
   const [registeredLocations, setRegisteredLocations] = useState<Location[]>([]);
   const [transactions, setTransactions] = useState<BottleTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'locations' | 'inventory' | 'unlocated' | 'transactions'>('locations');
+  const [activeTab, setActiveTab] = useState<'locations' | 'inventory' | 'unlocated' | 'transactions' | 'sharing'>('locations');
   const [selectedWineId, setSelectedWineId] = useState<string | null>(null);
 
   // Location management state
@@ -433,6 +434,9 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
 
   if (loading) return <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Loading…</div>;
   if (!profile) return <div className="px-4 py-6 text-sm text-muted-foreground">Cellar not found.</div>;
+
+  const isOwner = profile.is_owner !== false;
+  const canWrite = isOwner || profile.permission === 'write';
 
   // ── Merge formal + virtual locations ────────────────────────────────────────
   // Virtual = appears in inventory but has no locations-table entry.
@@ -617,40 +621,41 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
           {loc.max_capacity != null && (
             <CapacityBar used={used} max={loc.max_capacity} />
           )}
-          <div className="flex items-center gap-1 shrink-0">
-            {isVirtual ? (
-              // Virtual location: offer to register (add metadata)
-              <button
-                onClick={() => handleRegisterVirtual(loc)}
-                className="text-xs px-2 py-1 rounded border hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                title="Add capacity tracking and grouping"
-              >
-                Register
-              </button>
-            ) : isDeleting ? (
-              <div className="flex items-center gap-1">
-                <button onClick={() => handleDeleteLocation(loc.id)} className="text-xs px-2 py-1 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                  Delete
-                </button>
-                <button onClick={() => setDeleteLocId(null)} className="text-xs px-2 py-1 rounded border hover:bg-accent">Cancel</button>
-              </div>
-            ) : (
-              <>
+          {canWrite && (
+            <div className="flex items-center gap-1 shrink-0">
+              {isVirtual ? (
                 <button
-                  onClick={() => { setEditingLocId(isEditing ? null : loc.id); setDeleteLocId(null); }}
-                  className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => handleRegisterVirtual(loc)}
+                  className="text-xs px-2 py-1 rounded border hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  title="Add capacity tracking and grouping"
                 >
-                  {isEditing ? <X className="h-3.5 w-3.5" /> : <Edit2 className="h-3.5 w-3.5" />}
+                  Register
                 </button>
-                <button
-                  onClick={() => { setDeleteLocId(loc.id); setEditingLocId(null); }}
-                  className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
-          </div>
+              ) : isDeleting ? (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handleDeleteLocation(loc.id)} className="text-xs px-2 py-1 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete
+                  </button>
+                  <button onClick={() => setDeleteLocId(null)} className="text-xs px-2 py-1 rounded border hover:bg-accent">Cancel</button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setEditingLocId(isEditing ? null : loc.id); setDeleteLocId(null); }}
+                    className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {isEditing ? <X className="h-3.5 w-3.5" /> : <Edit2 className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => { setDeleteLocId(loc.id); setEditingLocId(null); }}
+                    className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         {isEditing && !isVirtual && (
           <LocationEditForm
@@ -783,11 +788,17 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Tabs */}
       <div className="space-y-4">
+        {!isOwner && (
+          <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground bg-muted/30 flex items-center gap-2">
+            <Share2 className="h-3.5 w-3.5 shrink-0" />
+            {canWrite ? 'You have read & write access to this cellar.' : 'You have read-only access to this cellar.'}
+          </div>
+        )}
         <div className="flex gap-0 border-b overflow-x-auto">
-          {(['locations', 'inventory', 'unlocated', 'transactions'] as const).map(tab => (
+          {(['locations', 'inventory', 'unlocated', 'transactions', ...(isOwner ? ['sharing'] : [])] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab(tab as typeof activeTab)}
               className={cn(
                 'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 whitespace-nowrap',
                 activeTab === tab ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -806,6 +817,12 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                 </>
               )}
               {tab === 'transactions' && 'History'}
+              {tab === 'sharing' && (
+                <span className="flex items-center gap-1.5">
+                  <Share2 className="h-3.5 w-3.5" />
+                  Sharing
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -829,16 +846,17 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
             {virtualLocations.length > 0 && (
               <div className="flex items-start justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
-                  Dashed locations come from your inventory. Click <strong>Register</strong> on individual locations,
-                  or use <strong>Fix Missing</strong> to register them all at once.
+                  Dashed locations come from your inventory.{canWrite && <> Click <strong>Register</strong> on individual locations, or use <strong>Fix Missing</strong> to register them all at once.</>}
                 </p>
-                <button
-                  onClick={() => setShowRegisterWizard(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-xs font-medium hover:bg-amber-200 transition-colors shrink-0"
-                >
-                  <Wrench className="h-3.5 w-3.5" />
-                  Fix Missing ({virtualLocations.length})
-                </button>
+                {canWrite && (
+                  <button
+                    onClick={() => setShowRegisterWizard(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-xs font-medium hover:bg-amber-200 transition-colors shrink-0"
+                  >
+                    <Wrench className="h-3.5 w-3.5" />
+                    Fix Missing ({virtualLocations.length})
+                  </button>
+                )}
               </div>
             )}
 
@@ -908,7 +926,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
             })}
 
             {/* Add / Bulk actions */}
-            {showAddForm ? (
+            {canWrite && (showAddForm ? (
               <AddLocationForm
                 profileId={id}
                 existingGroups={existingGroups}
@@ -932,7 +950,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                   Bulk Scan
                 </Link>
               </div>
-            )}
+            ))}
           </div>
         )}
 
@@ -950,10 +968,12 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                   ? 'All bottles have been assigned a location.'
                   : `${unlocatedBottles} bottle${unlocatedBottles !== 1 ? 's' : ''} need${unlocatedBottles === 1 ? 's' : ''} a location.`}
               </p>
-              <Link href="/scanner/bulk" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-                <PackagePlus className="h-3.5 w-3.5" />
-                Bulk Scan
-              </Link>
+              {canWrite && (
+                <Link href="/scanner/bulk" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                  <PackagePlus className="h-3.5 w-3.5" />
+                  Bulk Scan
+                </Link>
+              )}
             </div>
             <InventoryTabContent viewMap={byWineUnlocated} emptyLabel="No unlocated bottles." />
           </div>
@@ -964,6 +984,11 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
           <div className="rounded-lg border bg-card px-4 py-2">
             <TransactionLog transactions={transactions} />
           </div>
+        )}
+
+        {/* ── Sharing tab ── */}
+        {activeTab === 'sharing' && isOwner && (
+          <SharePanel profileId={id} />
         )}
       </div>
 

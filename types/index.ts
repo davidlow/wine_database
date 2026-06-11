@@ -58,6 +58,19 @@ export interface Profile {
   group_name?: string;
   created_at: string;
   updated_at: string;
+  // Populated when loaded with sharing context
+  is_owner?: boolean;
+  permission?: 'owner' | 'read' | 'write';
+}
+
+export interface CellarShare {
+  id: string;
+  profile_id: string;
+  owner_user_id: string;
+  shared_with_user_id: string;
+  shared_with_email: string;
+  permission: 'read' | 'write';
+  created_at: string;
 }
 
 // A named physical location (rack, fridge, shelf) with optional capacity.
@@ -309,5 +322,18 @@ export interface DbAdapter {
   getFreezerItems(profileId: string): Promise<FreezerItem[]>;
   addFreezerItem(input: AddFreezerInput, userId: string): Promise<FreezerItem>;
   removeFreezerItem(id: string, quantity: number, userId: string): Promise<FreezerItem>;
+  updateFreezerItem(id: string, updates: Partial<Pick<FreezerItem, 'meat_cut' | 'primal' | 'quantity' | 'weight_lbs' | 'location' | 'stored_date' | 'price_per_lb' | 'notes'>>): Promise<FreezerItem>;
   getFreezerTransactions(profileId: string): Promise<FreezerTransaction[]>;
+
+  // Sharing
+  getProfilePermission(profileId: string, userId: string): Promise<'owner' | 'read' | 'write' | null>;
+  getSharesForProfile(profileId: string): Promise<CellarShare[]>;
+  createShare(profileId: string, ownerUserId: string, sharedWithUserId: string, sharedWithEmail: string, permission: 'read' | 'write'): Promise<CellarShare>;
+  deleteShare(shareId: string, ownerUserId: string): Promise<void>;
+  getUserByEmail(email: string): Promise<{ id: string; email: string } | null>;
+
+  // Profile-ID lookups for permission checks on item-scoped routes
+  getInventoryProfileId(inventoryId: string): Promise<string | null>;
+  getLocationProfileId(locationId: string): Promise<string | null>;
+  getFreezerItemProfileId(itemId: string): Promise<string | null>;
 }

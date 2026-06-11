@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 import type { WineType } from '@/types';
 
 interface BulkAddItem {
@@ -29,6 +30,9 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json({ error: 'items array required' }, { status: 400 });
     }
+
+    const denied = await checkProfileAccess(body.profile_id, userId, 'write');
+    if (denied) return denied;
 
     const db = await getDb();
     const profileId: string = body.profile_id;

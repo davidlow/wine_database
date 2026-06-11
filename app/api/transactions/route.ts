@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 50;
 
     if (!profileId) return NextResponse.json({ error: 'profile_id required' }, { status: 400 });
+
+    const denied = await checkProfileAccess(profileId, userId, 'read');
+    if (denied) return denied;
 
     const db = await getDb();
     const transactions = await db.getTransactions(profileId, userId, limit);

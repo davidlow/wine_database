@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
     const wineId = searchParams.get('wine_id');
 
     if (!profileId) return NextResponse.json({ error: 'profile_id required' }, { status: 400 });
+
+    const denied = await checkProfileAccess(profileId, userId, 'read');
+    if (denied) return denied;
 
     const db = await getDb();
 
@@ -37,6 +41,9 @@ export async function POST(request: NextRequest) {
     if (!body.wine_id) return NextResponse.json({ error: 'wine_id required' }, { status: 400 });
     if (!body.profile_id) return NextResponse.json({ error: 'profile_id required' }, { status: 400 });
     if (!body.location?.trim()) return NextResponse.json({ error: 'location required' }, { status: 400 });
+
+    const denied = await checkProfileAccess(body.profile_id, userId, 'write');
+    if (denied) return denied;
 
     const db = await getDb();
     const item = await db.addBottle({

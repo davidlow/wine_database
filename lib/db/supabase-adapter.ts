@@ -3,6 +3,7 @@ import type {
   Wine,
   Profile,
   CellarInventory,
+  CellarShare,
   BottleTransaction,
   Location,
   WineNote,
@@ -150,24 +151,36 @@ export const supabaseAdapter: DbAdapter = {
   // --- Profiles ---
 
   async getProfiles(userId: string): Promise<Profile[]> {
-    const { data, error } = await getSupabaseAdmin()
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .order('name');
-    if (error) throw error;
-    return data as Profile[];
+    const admin = getSupabaseAdmin();
+    const [ownedRes, sharesRes] = await Promise.all([
+      admin.from('profiles').select('*').eq('user_id', userId).order('name'),
+      admin.from('cellar_shares').select('*').eq('shared_with_user_id', userId),
+    ]);
+    const owned = (ownedRes.data ?? []).map((p: Profile) => ({ ...p, is_owner: true, permission: 'owner' as const }));
+    const sharedProfileIds = (sharesRes.data ?? []).map((s: CellarShare) => s.profile_id);
+    let sharedProfiles: Profile[] = [];
+    if (sharedProfileIds.length > 0) {
+      const { data: profileData } = await admin.from('profiles').select('*').in('id', sharedProfileIds);
+      const shareMap = new Map((sharesRes.data ?? []).map((s: CellarShare) => [s.profile_id, s.permission]));
+      sharedProfiles = (profileData ?? []).map((p: Profile) => ({
+        ...p,
+        is_owner: false,
+        permission: shareMap.get(p.id) as 'read' | 'write',
+      }));
+    }
+    return [...owned, ...sharedProfiles].sort((a, b) => a.name.localeCompare(b.name));
   },
 
   async getProfileById(id: string, userId: string): Promise<Profile | null> {
-    const { data, error } = await getSupabaseAdmin()
-      .from('profiles')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single();
-    if (error) return null;
-    return data as Profile;
+    const admin = getSupabaseAdmin();
+    const { data: owned } = await admin.from('profiles').select('*').eq('id', id).eq('user_id', userId).single();
+    if (owned) return { ...owned, is_owner: true, permission: 'owner' } as Profile;
+    const { data: share } = await admin.from('cellar_shares').select('*').eq('profile_id', id).eq('shared_with_user_id', userId).single();
+    if (share) {
+      const { data: profile } = await admin.from('profiles').select('*').eq('id', id).single();
+      if (profile) return { ...profile, is_owner: false, permission: (share as CellarShare).permission } as Profile;
+    }
+    return null;
   },
 
   async createProfile(data): Promise<Profile> {
@@ -607,5 +620,67 @@ export const supabaseAdapter: DbAdapter = {
       const { freezer_inventory, ...rest } = r;
       return { ...rest, meat_cut: freezer_inventory?.meat_cut } as unknown as FreezerTransaction;
     });
+  },
+
+  // --- Sharing ---
+
+  async getProfilePermission(profileId: string, userId: string): Promise<'owner' | 'read' | 'write' | null> {
+    const admin = getSupabaseAdmin();
+    const { data: owned } = await admin.from('profiles').select('id').eq('id', profileId).eq('user_id', userId).single();
+    if (owned) return 'owner';
+    const { data: share } = await admin.from('cellar_shares').select('permission').eq('profile_id', profileId).eq('shared_with_user_id', userId).single();
+    return (share as { permission: 'read' | 'write' } | null)?.permission ?? null;
+  },
+
+  async getSharesForProfile(profileId: string): Promise<CellarShare[]> {
+    const { data, error } = await getSupabaseAdmin().from('cellar_shares').select('*').eq('profile_id', profileId).order('created_at');
+    if (error) throw error;
+    return (data ?? []) as CellarShare[];
+  },
+
+  async createShare(profileId: string, ownerUserId: string, sharedWithUserId: string, sharedWithEmail: string, permission: 'read' | 'write'): Promise<CellarShare> {
+    const share = { id: generateId(), profile_id: profileId, owner_user_id: ownerUserId, shared_with_user_id: sharedWithUserId, shared_with_email: sharedWithEmail, permission };
+    const { data, error } = await getSupabaseAdmin().from('cellar_shares').insert(share).select().single();
+    if (error) throw error;
+    return data as CellarShare;
+  },
+
+  async deleteShare(shareId: string, ownerUserId: string): Promise<void> {
+    const { error } = await getSupabaseAdmin().from('cellar_shares').delete().eq('id', shareId).eq('owner_user_id', ownerUserId);
+    if (error) throw error;
+  },
+
+  async getUserByEmail(email: string): Promise<{ id: string; email: string } | null> {
+    const { data } = await getSupabaseAdmin().auth.admin.listUsers();
+    const user = data.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+    if (!user || !user.email) return null;
+    return { id: user.id, email: user.email };
+  },
+
+  async getInventoryProfileId(inventoryId: string): Promise<string | null> {
+    const { data } = await getSupabaseAdmin().from('cellar_inventory').select('profile_id').eq('id', inventoryId).single();
+    return (data as { profile_id: string } | null)?.profile_id ?? null;
+  },
+
+  async getLocationProfileId(locationId: string): Promise<string | null> {
+    const { data } = await getSupabaseAdmin().from('locations').select('profile_id').eq('id', locationId).single();
+    return (data as { profile_id: string } | null)?.profile_id ?? null;
+  },
+
+  async getFreezerItemProfileId(itemId: string): Promise<string | null> {
+    const { data } = await getSupabaseAdmin().from('freezer_inventory').select('profile_id').eq('id', itemId).single();
+    return (data as { profile_id: string } | null)?.profile_id ?? null;
+  },
+
+  async updateFreezerItem(id: string, updates: Partial<Pick<FreezerItem, 'meat_cut' | 'primal' | 'quantity' | 'weight_lbs' | 'location' | 'stored_date' | 'price_per_lb' | 'notes'>>): Promise<FreezerItem> {
+    const storedDate = updates.stored_date;
+    const eatByDate = storedDate
+      ? `${parseInt(storedDate.slice(0, 4), 10) + 1}${storedDate.slice(4)}`
+      : undefined;
+    const patch: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() };
+    if (eatByDate) patch.eat_by_date = eatByDate;
+    const { data, error } = await getSupabaseAdmin().from('freezer_inventory').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data as FreezerItem;
   },
 };

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Plus, Edit2, Trash2, Loader2, ArrowRight, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, ArrowRight, Check, X, ChevronDown, ChevronRight, Users } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { cn } from '@/lib/utils';
 import type { Profile } from '@/types';
@@ -116,8 +116,12 @@ export default function ProfilesPage() {
 
   const inputCls = 'w-full px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring';
 
-  // Group profiles: keyed by group_name (empty string = ungrouped)
-  const grouped = profiles.reduce<Record<string, Profile[]>>((acc, p) => {
+  // Split owned vs shared
+  const ownedProfiles = profiles.filter(p => p.is_owner !== false);
+  const sharedProfiles = profiles.filter(p => p.is_owner === false);
+
+  // Group owned profiles by group_name
+  const grouped = ownedProfiles.reduce<Record<string, Profile[]>>((acc, p) => {
     const g = p.group_name ?? '';
     if (!acc[g]) acc[g] = [];
     acc[g].push(p);
@@ -185,10 +189,11 @@ export default function ProfilesPage() {
       )}
 
       <div className="space-y-4">
-        {profiles.length === 0 ? (
+        {ownedProfiles.length === 0 && sharedProfiles.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No cellars yet. Create one above.</p>
         ) : (
-          groupKeys.map((groupKey) => {
+          <>
+          {groupKeys.map((groupKey) => {
             const items = grouped[groupKey] ?? [];
             const isCollapsed = collapsedGroups.has(groupKey);
             const hasGroupName = groupKey !== '';
@@ -305,7 +310,35 @@ export default function ProfilesPage() {
                 )}
               </div>
             );
-          })
+          })}
+
+          {sharedProfiles.length > 0 && (
+            <div className="pt-2">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shared with me</span>
+              </div>
+              <div className="space-y-2">
+                {sharedProfiles.map(p => (
+                  <div key={p.id} className="rounded-lg border bg-card">
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{p.name}</p>
+                        {p.description && <p className="text-xs text-muted-foreground">{p.description}</p>}
+                        <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${p.permission === 'write' ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                          {p.permission === 'write' ? 'Read & write' : 'Read only'}
+                        </span>
+                      </div>
+                      <Link href={`/profiles/${p.id}`} className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors ml-3 shrink-0">
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>

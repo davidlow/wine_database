@@ -130,3 +130,18 @@ CREATE TABLE IF NOT EXISTS freezer_transactions (
 CREATE INDEX IF NOT EXISTS idx_freezer_profile_id ON freezer_inventory(profile_id);
 CREATE INDEX IF NOT EXISTS idx_freezer_tx_item_id ON freezer_transactions(freezer_item_id);
 CREATE INDEX IF NOT EXISTS idx_freezer_tx_profile_id ON freezer_transactions(profile_id);
+
+-- Cellar sharing: grant another user read or write access to a cellar profile
+CREATE TABLE IF NOT EXISTS cellar_shares (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  owner_user_id TEXT NOT NULL,
+  shared_with_user_id TEXT NOT NULL,
+  shared_with_email TEXT NOT NULL,
+  permission TEXT NOT NULL CHECK (permission IN ('read', 'write')),
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(profile_id, shared_with_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shares_profile_id ON cellar_shares(profile_id);
+CREATE INDEX IF NOT EXISTS idx_shares_shared_with ON cellar_shares(shared_with_user_id);

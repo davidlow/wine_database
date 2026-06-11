@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Snowflake, Trash2, ChevronDown, ChevronUp, Loader2, AlertCircle, Search } from 'lucide-react';
+import { Plus, Snowflake, Trash2, ChevronDown, ChevronUp, Loader2, AlertCircle, Search, Edit2 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { MEAT_CUTS, getPrimalForCut } from '@/lib/meat-cuts';
 import type { FreezerItem, FreezerTransaction } from '@/types';
@@ -83,6 +83,11 @@ export default function FreezerPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeQty, setRemoveQty] = useState<Record<string, string>>({});
+
+  const [editItem, setEditItem] = useState<FreezerItem | null>(null);
+  const [editForm, setEditForm] = useState<AddFormState>(DEFAULT_FORM);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
@@ -186,6 +191,59 @@ export default function FreezerPage() {
       }
     } finally {
       setRemoving(null);
+    }
+  };
+
+  const openEdit = (item: FreezerItem) => {
+    setEditItem(item);
+    setEditForm({
+      meat_cut: MEAT_CUTS.some(m => m.cut === item.meat_cut) ? item.meat_cut : '__custom__',
+      custom_cut: MEAT_CUTS.some(m => m.cut === item.meat_cut) ? '' : item.meat_cut,
+      primal: item.primal ?? '',
+      quantity: String(item.quantity),
+      weight_lbs: item.weight_lbs != null ? String(item.weight_lbs) : '',
+      location: item.location ?? '',
+      stored_date: item.stored_date,
+      price_per_lb: item.price_per_lb != null ? String(item.price_per_lb) : '',
+      notes: item.notes ?? '',
+    });
+    setEditError(null);
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editItem) return;
+    setEditError(null);
+    const cutName = editForm.meat_cut === '__custom__' ? editForm.custom_cut.trim() : editForm.meat_cut;
+    if (!cutName) { setEditError('Select or enter a meat cut'); return; }
+    if (!editForm.stored_date) { setEditError('Stored date is required'); return; }
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/freezer/${editItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meat_cut: cutName,
+          primal: editForm.primal || undefined,
+          quantity: Number(editForm.quantity) || 1,
+          weight_lbs: editForm.weight_lbs ? Number(editForm.weight_lbs) : undefined,
+          location: editForm.location || '',
+          stored_date: editForm.stored_date,
+          price_per_lb: editForm.price_per_lb ? Number(editForm.price_per_lb) : undefined,
+          notes: editForm.notes || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setEditError(data.error ?? 'Failed to update item');
+        return;
+      }
+      setEditItem(null);
+      await load();
+    } catch {
+      setEditError('Failed to update item');
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -338,18 +396,27 @@ export default function FreezerPage() {
                   className="w-14 h-7 text-sm text-center border rounded px-1 bg-background"
                 />
                 <span className="text-xs text-muted-foreground">pack{(Number(removeQty[item.id] ?? 1)) !== 1 ? 's' : ''}</span>
-                <button
-                  onClick={() => handleRemove(item)}
-                  disabled={removing === item.id}
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 ml-auto"
-                >
-                  {removing === item.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3 w-3" />
-                  )}
-                  Remove
-                </button>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors"
+                  >
+                    <Edit2 className="h-3 w-3" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleRemove(item)}
+                    disabled={removing === item.id}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  >
+                    {removing === item.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
+                    Remove
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -407,6 +474,169 @@ export default function FreezerPage() {
           )}
         </div>
       )}
+
+      {/* Edit Item dialog */}
+      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit2 className="h-4 w-4 text-primary" />
+              Edit Freezer Item
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleEdit} className="space-y-4 mt-2">
+            {editError && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {editError}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Meat Cut</label>
+              <select
+                value={editForm.meat_cut}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === '__custom__') {
+                    setEditForm(f => ({ ...f, meat_cut: '__custom__', primal: '' }));
+                  } else {
+                    setEditForm(f => ({ ...f, meat_cut: v, custom_cut: '', primal: getPrimalForCut(v) ?? f.primal }));
+                  }
+                }}
+                className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+                required
+              >
+                <option value="">Select a cut…</option>
+                {MEAT_CUTS.map(m => (
+                  <option key={m.cut} value={m.cut}>{m.cut}</option>
+                ))}
+                <option value="__custom__">Custom cut…</option>
+              </select>
+            </div>
+
+            {editForm.meat_cut === '__custom__' && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Cut Name</label>
+                <input
+                  type="text"
+                  value={editForm.custom_cut}
+                  onChange={e => setEditForm(f => ({ ...f, custom_cut: e.target.value }))}
+                  placeholder="e.g. Lamb Shoulder"
+                  className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Primal / Area</label>
+              <input
+                type="text"
+                value={editForm.primal}
+                onChange={e => setEditForm(f => ({ ...f, primal: e.target.value }))}
+                placeholder="e.g. Chuck, Loin"
+                className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Packs</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={editForm.quantity}
+                  onChange={e => setEditForm(f => ({ ...f, quantity: e.target.value }))}
+                  className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Weight/pack (lbs)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={editForm.weight_lbs}
+                  onChange={e => setEditForm(f => ({ ...f, weight_lbs: e.target.value }))}
+                  placeholder="optional"
+                  className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Freezer / Location</label>
+              <input
+                type="text"
+                list="edit-freezer-locations"
+                value={editForm.location}
+                onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))}
+                placeholder="e.g. Garage Freezer"
+                className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+              />
+              <datalist id="edit-freezer-locations">
+                {knownLocations.map(loc => <option key={loc} value={loc} />)}
+              </datalist>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Date Stored</label>
+                <input
+                  type="date"
+                  value={editForm.stored_date}
+                  onChange={e => setEditForm(f => ({ ...f, stored_date: e.target.value }))}
+                  className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Price/lb ($)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={editForm.price_per_lb}
+                  onChange={e => setEditForm(f => ({ ...f, price_per_lb: e.target.value }))}
+                  placeholder="optional"
+                  className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Notes</label>
+              <input
+                type="text"
+                value={editForm.notes}
+                onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="optional"
+                className="w-full h-9 border rounded-md px-3 text-sm bg-background"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setEditItem(null)}
+                className="flex-1 h-9 border rounded-md text-sm hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editSaving}
+                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+              >
+                {editSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Item dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>

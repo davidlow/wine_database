@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
+import { checkProfileAccess } from '@/lib/permissions';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -26,6 +27,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
+    const denied = await checkProfileAccess(id, userId, 'owner');
+    if (denied) return denied;
+
     const body = await request.json();
     const db = await getDb();
     const profile = await db.updateProfile(id, userId, body);
@@ -42,6 +46,9 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
+    const denied = await checkProfileAccess(id, userId, 'owner');
+    if (denied) return denied;
+
     const db = await getDb();
     await db.deleteProfile(id, userId);
     return NextResponse.json({ success: true });
