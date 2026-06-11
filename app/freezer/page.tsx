@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, Snowflake, Trash2, ChevronDown, ChevronUp,
-  Loader2, AlertCircle, Edit2, Settings2, Check, X,
+  Loader2, AlertCircle, Edit2, Settings2, Check, X, Search,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { MEAT_CUTS, getPrimalForCut, getAnimalForCut, ANIMAL_LABELS, type MeatAnimal } from '@/lib/meat-cuts';
@@ -190,8 +190,9 @@ export default function FreezerPage() {
   const [error, setError] = useState<string | null>(null);
 
   // View state
-  const [activeLocation, setActiveLocation] = useState<string | null>(null); // null = All
+  const [selectedLocs, setSelectedLocs] = useState<Set<string>>(new Set()); // empty = All
   const [sortBy, setSortBy] = useState<'oldest' | 'newest' | 'most' | 'least' | 'az'>('oldest');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showHistory, setShowHistory] = useState(false);
 
   // Add form
@@ -289,23 +290,42 @@ export default function FreezerPage() {
 
   const registeredLocNames = useMemo(() => new Set(locations.map(l => l.name)), [locations]);
 
-  const tabLocations = useMemo(() => {
+  // Toggle a location pill on/off
+  const toggleLoc = (key: string) => {
+    setSelectedLocs(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Pills: each registered location + Unlocated (if any)
+  const locPills = useMemo(() => {
     const hasUnlocated = items.some(i => !i.location || !registeredLocNames.has(i.location));
     return [
-      { key: null,           label: 'All',       count: items.length },
-      ...locations.map(l => ({ key: l.name,   label: l.name, count: items.filter(i => i.location === l.name).length })),
+      ...locations.map(l => ({ key: l.name, label: l.name, count: items.filter(i => i.location === l.name).length })),
       ...(hasUnlocated ? [{ key: '__unlocated__', label: 'Unlocated', count: items.filter(i => !i.location || !registeredLocNames.has(i.location)).length }] : []),
     ];
   }, [items, locations, registeredLocNames]);
 
   const sortedItems = useMemo(() => {
-    const filtered = activeLocation === null
-      ? [...items]
-      : activeLocation === '__unlocated__'
-      ? items.filter(i => !i.location || !registeredLocNames.has(i.location))
-      : items.filter(i => i.location === activeLocation);
+    const q = searchQuery.trim().toLowerCase();
 
-    return filtered.sort((a, b) => {
+    // Location filter: empty selectedLocs = all
+    const locFiltered = selectedLocs.size === 0
+      ? [...items]
+      : items.filter(i => {
+          if (selectedLocs.has(i.location)) return true;
+          if (selectedLocs.has('__unlocated__') && (!i.location || !registeredLocNames.has(i.location))) return true;
+          return false;
+        });
+
+    // Search filter
+    const searched = q
+      ? locFiltered.filter(i => i.meat_cut.toLowerCase().includes(q) || (i.primal ?? '').toLowerCase().includes(q))
+      : locFiltered;
+
+    return searched.sort((a, b) => {
       switch (sortBy) {
         case 'oldest': return a.stored_date.localeCompare(b.stored_date);
         case 'newest': return b.stored_date.localeCompare(a.stored_date);
@@ -315,7 +335,7 @@ export default function FreezerPage() {
         default:       return 0;
       }
     });
-  }, [items, locations, activeLocation, sortBy, registeredLocNames]);
+  }, [items, selectedLocs, sortBy, searchQuery, registeredLocNames]);
 
   // ── Cut change helper (shared) ──────────────────────────────────────────────
   const makeCutChange = (setter: React.Dispatch<React.SetStateAction<FormState>>) =>
@@ -526,35 +546,57 @@ export default function FreezerPage() {
         </div>
       )}
 
-      {/* ── Location tabs + inventory ── */}
+      {/* ── Search bar ── */}
+      {!loading && items.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search cuts… (e.g. beef brisket, chuck)"
+            className="w-full h-9 pl-8 pr-3 border rounded-md text-sm bg-background"
+          />
+        </div>
+      )}
+
+      {/* ── Location filter + inventory ── */}
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Tab bar */}
-          <div className="flex items-center gap-2">
-            <div className="flex gap-0 border-b flex-1 overflow-x-auto">
-              {tabLocations.map(tab => (
-                <button
-                  key={String(tab.key)}
-                  onClick={() => setActiveLocation(tab.key)}
-                  className={cn(
-                    'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 whitespace-nowrap',
-                    activeLocation === tab.key
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {tab.label}
-                  <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full">{tab.count}</span>
-                </button>
-              ))}
-            </div>
+          {/* Location pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setSelectedLocs(new Set())}
+              className={cn(
+                'px-3 py-1 rounded-full border text-xs font-medium transition-colors',
+                selectedLocs.size === 0
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+              )}
+            >
+              All ({items.length})
+            </button>
+            {locPills.map(pill => (
+              <button
+                key={pill.key}
+                onClick={() => toggleLoc(pill.key)}
+                className={cn(
+                  'px-3 py-1 rounded-full border text-xs font-medium transition-colors',
+                  selectedLocs.has(pill.key)
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                )}
+              >
+                {pill.label} ({pill.count})
+              </button>
+            ))}
             <button
               onClick={() => setShowManageLocs(true)}
-              className="text-xs text-muted-foreground hover:text-foreground p-1.5 rounded hover:bg-accent transition-colors shrink-0"
+              className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ml-auto"
               title="Manage freezer locations"
             >
               <Settings2 className="h-4 w-4" />
@@ -585,7 +627,10 @@ export default function FreezerPage() {
               <Snowflake className="h-8 w-8 mx-auto mb-3 opacity-30" />
               {items.length === 0
                 ? <><p className="text-sm">No items yet.</p><p className="text-xs mt-1">Click &quot;Add Item&quot; to get started.</p></>
-                : <p className="text-sm">No items in this location.</p>
+                : searchQuery.trim()
+                ? <><p className="text-sm">No cuts match &ldquo;{searchQuery.trim()}&rdquo;{selectedLocs.size > 0 ? ' in the selected freezers' : ''}.</p>
+                    <button onClick={() => setSearchQuery('')} className="text-xs text-primary mt-1 hover:underline">Clear search</button></>
+                : <p className="text-sm">No items in the selected freezers.</p>
               }
             </div>
           ) : (
