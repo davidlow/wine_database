@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, Snowflake, Trash2, ChevronDown, ChevronUp,
-  Loader2, AlertCircle, Edit2, Settings2, Check, X, Search,
+  Loader2, AlertCircle, Edit2, Settings2, Check, X, Search, Copy,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { MEAT_CUTS, getPrimalForCut, getAnimalForCut, ANIMAL_LABELS, type MeatAnimal } from '@/lib/meat-cuts';
@@ -125,16 +125,10 @@ function ItemForm({
           placeholder="Auto-filled from cut" className={inp} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Packs</label>
-          <input type="number" min={1} value={form.quantity} onChange={e => onChange({ quantity: e.target.value })} className={inp} required />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Weight/pack (lbs)</label>
-          <input type="number" min={0} step={0.1} value={form.weight_lbs} onChange={e => onChange({ weight_lbs: e.target.value })}
-            placeholder="optional" className={inp} />
-        </div>
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium">Weight (lbs)</label>
+        <input type="number" min={0} step={0.1} value={form.weight_lbs} onChange={e => onChange({ weight_lbs: e.target.value })}
+          placeholder="optional" className={inp} />
       </div>
 
       <div className="space-y-1.5">
@@ -210,7 +204,6 @@ export default function FreezerPage() {
 
   // Remove
   const [removing, setRemoving] = useState<string | null>(null);
-  const [removeQty, setRemoveQty] = useState<Record<string, string>>({});
 
   // Manage locations dialog
   const [showManageLocs, setShowManageLocs] = useState(false);
@@ -385,7 +378,7 @@ export default function FreezerPage() {
           profile_id: activeProfile!.id,
           meat_cut: cutName,
           primal: addForm.primal || undefined,
-          quantity: Number(addForm.quantity) || 1,
+          quantity: 1,
           weight_lbs: addForm.weight_lbs ? Number(addForm.weight_lbs) : undefined,
           location: addForm.location || '',
           stored_date: addForm.stored_date,
@@ -431,17 +424,22 @@ export default function FreezerPage() {
   };
 
   // ── Remove ───────────────────────────────────────────────────────────────────
-  const handleRemove = async (item: FreezerItem, overrideQty?: number) => {
-    const qty = overrideQty ?? Number(removeQty[item.id] ?? 1);
-    if (qty < 1 || qty > item.quantity) return;
+  const handleRemove = async (item: FreezerItem) => {
     setRemoving(item.id);
     try {
       const res = await fetch(`/api/freezer/${item.id}`, {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: qty }),
+        body: JSON.stringify({ quantity: item.quantity }),
       });
-      if (res.ok) { await load(); setRemoveQty(r => { const n = { ...r }; delete n[item.id]; return n; }); }
+      if (res.ok) await load();
     } finally { setRemoving(null); }
+  };
+
+  // ── Duplicate ────────────────────────────────────────────────────────────────
+  const handleDuplicate = (item: FreezerItem) => {
+    setAddForm(itemToForm(item));
+    setAddError(null);
+    setShowAdd(true);
   };
 
   // ── Location management ──────────────────────────────────────────────────────
@@ -497,7 +495,7 @@ export default function FreezerPage() {
         <div className="flex items-center gap-2">
           <Snowflake className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-bold">Freezer</h1>
-          {totalPacks > 0 && <span className="text-sm text-muted-foreground">({totalPacks} packs)</span>}
+          {totalPacks > 0 && <span className="text-sm text-muted-foreground">({totalPacks} packages)</span>}
         </div>
         <button
           onClick={() => { setShowAdd(true); setAddForm(DEFAULT_FORM); setAddError(null); }}
@@ -522,7 +520,7 @@ export default function FreezerPage() {
               <p className="text-lg font-bold tabular-nums">{stat.packs}</p>
               <p className="text-xs font-medium">{ANIMAL_LABELS[stat.animal]}</p>
               {stat.weight > 0 && (
-                <p className="text-xs opacity-70 mt-0.5">≈{stat.weight % 1 === 0 ? stat.weight : stat.weight.toFixed(1)} lbs</p>
+                <p className="text-xs opacity-70 mt-0.5">{stat.weight % 1 === 0 ? stat.weight : stat.weight.toFixed(1)} lbs</p>
               )}
             </div>
           ))}
@@ -550,7 +548,9 @@ export default function FreezerPage() {
                       </p>
                     </div>
                     <span className="text-xs font-medium text-destructive shrink-0">{daysOver}d over</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{item.quantity} pk</span>
+                    {item.weight_lbs != null && (
+                      <span className="text-xs text-muted-foreground shrink-0">{item.weight_lbs} lbs</span>
+                    )}
                     <button
                       onClick={() => { setEditItem(item); setEditForm(itemToForm(item)); setEditError(null); }}
                       className="text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors shrink-0"
@@ -558,7 +558,7 @@ export default function FreezerPage() {
                       <Edit2 className="h-3 w-3" />
                     </button>
                     <button
-                      onClick={() => handleRemove(item, item.quantity)}
+                      onClick={() => handleRemove(item)}
                       disabled={removing === item.id}
                       className="text-xs px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50"
                     >
@@ -655,13 +655,14 @@ export default function FreezerPage() {
                       <p className="font-semibold">{item.meat_cut}</p>
                       {item.primal && <p className="text-xs text-muted-foreground">{item.primal}</p>}
                     </div>
-                    <span className="shrink-0 text-sm font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                      {item.quantity} {item.quantity === 1 ? 'pack' : 'packs'}
-                    </span>
+                    {item.weight_lbs != null && (
+                      <span className="shrink-0 text-sm font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        {item.weight_lbs} lbs
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                    {item.weight_lbs != null && <span>~{item.weight_lbs} lbs/pack</span>}
                     {item.location && <span>{item.location}</span>}
                     <span>Stored: {formatDate(item.stored_date)}</span>
                     <span className={eatByColor(item.eat_by_date)}>Eat by: {formatDate(item.eat_by_date)}</span>
@@ -669,31 +670,28 @@ export default function FreezerPage() {
                     {item.notes && <span className="col-span-2 italic">{item.notes}</span>}
                   </div>
 
-                  <div className="flex items-center gap-2 pt-1 border-t">
-                    <label className="text-xs text-muted-foreground">Remove</label>
-                    <input
-                      type="number" min={1} max={item.quantity}
-                      value={removeQty[item.id] ?? '1'}
-                      onChange={e => setRemoveQty(r => ({ ...r, [item.id]: e.target.value }))}
-                      className="w-14 h-7 text-sm text-center border rounded px-1 bg-background"
-                    />
-                    <span className="text-xs text-muted-foreground">pack{(Number(removeQty[item.id] ?? 1)) !== 1 ? 's' : ''}</span>
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      <button
-                        onClick={() => { setEditItem(item); setEditForm(itemToForm(item)); setEditError(null); }}
-                        className="flex items-center gap-1 text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors"
-                      >
-                        <Edit2 className="h-3 w-3" />Edit
-                      </button>
-                      <button
-                        onClick={() => handleRemove(item)}
-                        disabled={removing === item.id}
-                        className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                      >
-                        {removing === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                        Remove
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-1.5 pt-1 border-t justify-end">
+                    <button
+                      onClick={() => { setEditItem(item); setEditForm(itemToForm(item)); setEditError(null); }}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors"
+                    >
+                      <Edit2 className="h-3 w-3" />Edit
+                    </button>
+                    <button
+                      onClick={() => handleDuplicate(item)}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors"
+                      title="Copy this item to add another package"
+                    >
+                      <Copy className="h-3 w-3" />Copy
+                    </button>
+                    <button
+                      onClick={() => handleRemove(item)}
+                      disabled={removing === item.id}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                    >
+                      {removing === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      Remove
+                    </button>
                   </div>
                 </div>
               ))}
