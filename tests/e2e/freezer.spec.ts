@@ -239,7 +239,10 @@ test.describe('Freezer UI', () => {
   test('can add an item via the UI form — dialog closes on success', async ({ page }) => {
     await page.goto('/freezer');
     await addItemViaUI(page, 'Beef Chuck Roast', '2', STORED_DATE);
-    // Dialog is gone and item name appears in inventory list
+    // Search bar appears once items exist; search to reveal the item card
+    const searchInput = page.getByPlaceholder(/search cuts/i);
+    await expect(searchInput).toBeVisible({ timeout: 5000 });
+    await searchInput.fill('chuck');
     await expect(page.getByText('Beef Chuck Roast')).toBeVisible({ timeout: 5000 });
   });
 
@@ -264,10 +267,10 @@ test.describe('Freezer UI', () => {
     await expect(page.getByText('Beef Chuck Roast')).toBeVisible({ timeout: 2000 });
     await expect(page.getByText('Beef Ribeye Steak')).not.toBeVisible();
 
-    // Clear filter — both visible
+    // Clear filter — items hidden (search-first UI shows cards only when a query is active)
     await searchInput.fill('');
-    await expect(page.getByText('Beef Ribeye Steak')).toBeVisible({ timeout: 2000 });
-    await expect(page.getByText('Beef Chuck Roast')).toBeVisible();
+    await expect(page.getByText('Beef Ribeye Steak')).not.toBeVisible();
+    await expect(page.getByText('Beef Chuck Roast')).not.toBeVisible();
   });
 
   test('no-results state shown when search matches nothing', async ({ page }) => {
@@ -285,8 +288,11 @@ test.describe('Freezer UI', () => {
     await page.goto('/freezer');
     await addItemViaUI(page, 'Pork Butt', '1', '2026-03-01');
 
-    // Eat by: Mar 1, 2027 (1 year later)
-    await expect(page.getByText(/eat by/i)).toBeVisible({ timeout: 5000 });
+    // Search to reveal the item card, then verify eat-by date (stored + 1 year)
+    const searchInput = page.getByPlaceholder(/search cuts/i);
+    await expect(searchInput).toBeVisible({ timeout: 5000 });
+    await searchInput.fill('pork');
+    await expect(page.getByText(/eat by/i)).toBeVisible({ timeout: 2000 });
     await expect(page.getByText(/mar 1, 2027/i)).toBeVisible({ timeout: 2000 });
   });
 });

@@ -592,8 +592,8 @@ export default function FreezerPage() {
         </div>
       )}
 
-      {/* ── Item list ── */}
-      {!loading && items.length > 0 && (
+      {/* ── Item list (only when a search query is active) ── */}
+      {!loading && items.length > 0 && searchQuery.trim() !== '' && (
         <div className="space-y-3">
           {/* Location pills */}
           <div className="flex items-center gap-2 flex-wrap">
