@@ -16,6 +16,7 @@ import type {
   MoveBottleInput,
   FreezerItem,
   FreezerTransaction,
+  FreezerLocation,
   AddFreezerInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
@@ -751,6 +752,32 @@ export const sqliteAdapter: DbAdapter = {
       WHERE ft.profile_id = ?
       ORDER BY ft.created_at DESC
     `).all(profileId) as FreezerTransaction[];
+  },
+
+  async getFreezerLocations(profileId: string): Promise<FreezerLocation[]> {
+    return getDb().prepare(
+      'SELECT * FROM freezer_locations WHERE profile_id = ? ORDER BY name ASC'
+    ).all(profileId) as FreezerLocation[];
+  },
+
+  async addFreezerLocation(profileId: string, name: string): Promise<FreezerLocation> {
+    const loc: FreezerLocation = { id: generateId(), profile_id: profileId, name: name.trim(), created_at: new Date().toISOString() };
+    getDb().prepare('INSERT INTO freezer_locations (id, profile_id, name, created_at) VALUES (?, ?, ?, ?)').run(loc.id, loc.profile_id, loc.name, loc.created_at);
+    return loc;
+  },
+
+  async renameFreezerLocation(id: string, name: string): Promise<FreezerLocation> {
+    getDb().prepare('UPDATE freezer_locations SET name = ? WHERE id = ?').run(name.trim(), id);
+    return getDb().prepare('SELECT * FROM freezer_locations WHERE id = ?').get(id) as FreezerLocation;
+  },
+
+  async deleteFreezerLocation(id: string): Promise<void> {
+    getDb().prepare('DELETE FROM freezer_locations WHERE id = ?').run(id);
+  },
+
+  async getFreezerLocationProfileId(id: string): Promise<string | null> {
+    const row = getDb().prepare('SELECT profile_id FROM freezer_locations WHERE id = ?').get(id) as { profile_id: string } | undefined;
+    return row?.profile_id ?? null;
   },
 
   // --- Sharing ---

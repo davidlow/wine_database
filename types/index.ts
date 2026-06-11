@@ -243,6 +243,13 @@ export interface FreezerItem {
   updated_at: string;
 }
 
+export interface FreezerLocation {
+  id: string;
+  profile_id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface FreezerTransaction {
   id: string;
   freezer_item_id: string;
@@ -324,6 +331,11 @@ export interface DbAdapter {
   removeFreezerItem(id: string, quantity: number, userId: string): Promise<FreezerItem>;
   updateFreezerItem(id: string, updates: Partial<Pick<FreezerItem, 'meat_cut' | 'primal' | 'quantity' | 'weight_lbs' | 'location' | 'stored_date' | 'price_per_lb' | 'notes'>>): Promise<FreezerItem>;
   getFreezerTransactions(profileId: string): Promise<FreezerTransaction[]>;
+  getFreezerLocations(profileId: string): Promise<FreezerLocation[]>;
+  addFreezerLocation(profileId: string, name: string): Promise<FreezerLocation>;
+  renameFreezerLocation(id: string, name: string): Promise<FreezerLocation>;
+  deleteFreezerLocation(id: string): Promise<void>;
+  getFreezerLocationProfileId(id: string): Promise<string | null>;
 
   // Sharing
   getProfilePermission(profileId: string, userId: string): Promise<'owner' | 'read' | 'write' | null>;

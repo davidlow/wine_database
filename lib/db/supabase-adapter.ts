@@ -14,6 +14,7 @@ import type {
   WineFoodPairing,
   FreezerItem,
   FreezerTransaction,
+  FreezerLocation,
   AddFreezerInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
@@ -669,6 +670,34 @@ export const supabaseAdapter: DbAdapter = {
 
   async getFreezerItemProfileId(itemId: string): Promise<string | null> {
     const { data } = await getSupabaseAdmin().from('freezer_inventory').select('profile_id').eq('id', itemId).single();
+    return (data as { profile_id: string } | null)?.profile_id ?? null;
+  },
+
+  async getFreezerLocations(profileId: string): Promise<FreezerLocation[]> {
+    const { data } = await getSupabaseAdmin().from('freezer_locations').select('*').eq('profile_id', profileId).order('name');
+    return (data ?? []) as FreezerLocation[];
+  },
+
+  async addFreezerLocation(profileId: string, name: string): Promise<FreezerLocation> {
+    const loc = { id: generateId(), profile_id: profileId, name: name.trim() };
+    const { data, error } = await getSupabaseAdmin().from('freezer_locations').insert(loc).select().single();
+    if (error) throw error;
+    return data as FreezerLocation;
+  },
+
+  async renameFreezerLocation(id: string, name: string): Promise<FreezerLocation> {
+    const { data, error } = await getSupabaseAdmin().from('freezer_locations').update({ name: name.trim() }).eq('id', id).select().single();
+    if (error) throw error;
+    return data as FreezerLocation;
+  },
+
+  async deleteFreezerLocation(id: string): Promise<void> {
+    const { error } = await getSupabaseAdmin().from('freezer_locations').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  async getFreezerLocationProfileId(id: string): Promise<string | null> {
+    const { data } = await getSupabaseAdmin().from('freezer_locations').select('profile_id').eq('id', id).single();
     return (data as { profile_id: string } | null)?.profile_id ?? null;
   },
 

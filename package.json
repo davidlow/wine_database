@@ -12,7 +12,8 @@
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "seed": "npx tsx lib/db/seed.ts"
+    "seed": "npx tsx lib/db/seed.ts",
+    "seed:sample": "npx tsx scripts/seed-sample-db.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
