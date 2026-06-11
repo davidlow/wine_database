@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Wine, ScanLine, Layers, BarChart2, Building2, UtensilsCrossed, Snowflake } from 'lucide-react';
+import { Home, Wine, ScanLine, Layers, BarChart2, Building2, UtensilsCrossed, Snowflake, ShoppingBasket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
 import { useProfile } from '@/hooks/useProfile';
@@ -67,6 +67,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Snowflake className="h-4 w-4 shrink-0" />
             Freezer
           </Link>
+          <Link href="/pantry" className={navItemCls(isActive('/pantry'))}>
+            <ShoppingBasket className="h-4 w-4 shrink-0" />
+            Pantry
+          </Link>
           <Link href="/statistics" className={navItemCls(isActive('/statistics'))}>
             <BarChart2 className="h-4 w-4 shrink-0" />
             Statistics
@@ -121,6 +125,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/freezer" className={mobileNavItemCls(isActive('/freezer'))}>
             <Snowflake className="h-5 w-5" />
             Freezer
+          </Link>
+          <Link href="/pantry" className={mobileNavItemCls(isActive('/pantry'))}>
+            <ShoppingBasket className="h-5 w-5" />
+            Pantry
           </Link>
           <Link href="/statistics" className={mobileNavItemCls(isActive('/statistics'))}>
             <BarChart2 className="h-5 w-5" />

@@ -256,9 +256,51 @@ export interface FreezerTransaction {
   profile_id: string;
   action: 'add' | 'remove';
   quantity: number;
+  weight_lbs?: number;
   notes?: string;
   created_at: string;
   meat_cut?: string;
+}
+
+export interface PantryItem {
+  id: string;
+  profile_id: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  quantity: number;
+  unit: string;
+  location: string;
+  stored_date: string;
+  best_by_date?: string;
+  best_by_days: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PantryTransaction {
+  id: string;
+  pantry_item_id: string;
+  profile_id: string;
+  action: 'add' | 'remove';
+  quantity: number;
+  created_at: string;
+  item_name?: string;
+}
+
+export interface AddPantryInput {
+  profile_id: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  quantity: number;
+  unit?: string;
+  location?: string;
+  stored_date: string;
+  best_by_date?: string;
+  best_by_days?: number;
+  notes?: string;
 }
 
 export interface AddFreezerInput {
@@ -343,6 +385,14 @@ export interface DbAdapter {
   createShare(profileId: string, ownerUserId: string, sharedWithUserId: string, sharedWithEmail: string, permission: 'read' | 'write'): Promise<CellarShare>;
   deleteShare(shareId: string, ownerUserId: string): Promise<void>;
   getUserByEmail(email: string): Promise<{ id: string; email: string } | null>;
+
+  // Pantry
+  getPantryItems(profileId: string): Promise<PantryItem[]>;
+  addPantryItem(input: AddPantryInput, userId: string): Promise<PantryItem>;
+  updatePantryItem(id: string, updates: Partial<Pick<PantryItem, 'name' | 'brand' | 'category' | 'quantity' | 'unit' | 'location' | 'stored_date' | 'best_by_date' | 'best_by_days' | 'notes'>>): Promise<PantryItem>;
+  removePantryItem(id: string, quantity: number, userId: string): Promise<PantryItem>;
+  getPantryTransactions(profileId: string): Promise<PantryTransaction[]>;
+  getPantryItemProfileId(id: string): Promise<string | null>;
 
   // Profile-ID lookups for permission checks on item-scoped routes
   getInventoryProfileId(inventoryId: string): Promise<string | null>;

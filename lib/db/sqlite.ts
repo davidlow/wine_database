@@ -18,6 +18,9 @@ import type {
   FreezerTransaction,
   FreezerLocation,
   AddFreezerInput,
+  PantryItem,
+  PantryTransaction,
+  AddPantryInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
@@ -53,6 +56,7 @@ function openDb(resolvedPath: string): Database.Database {
   try { conn.exec('ALTER TABLE wines ADD COLUMN sweetness REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN body REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_profile TEXT'); } catch {}
+  try { conn.exec('ALTER TABLE freezer_transactions ADD COLUMN weight_lbs REAL'); } catch {}
   return conn;
 }
 
@@ -708,11 +712,12 @@ export const sqliteAdapter: DbAdapter = {
     if (quantity > existing.quantity) throw new Error('Cannot remove more packs than available');
     const now = new Date().toISOString();
     const newQty = existing.quantity - quantity;
+    const weightLbs = existing.weight_lbs != null ? quantity * existing.weight_lbs : null;
     d.prepare('UPDATE freezer_inventory SET quantity = ?, updated_at = ? WHERE id = ?').run(newQty, now, id);
     d.prepare(`
-      INSERT INTO freezer_transactions (id, freezer_item_id, profile_id, action, quantity, created_at)
-      VALUES (?, ?, ?, 'remove', ?, ?)
-    `).run(generateId(), id, existing.profile_id, quantity, now);
+      INSERT INTO freezer_transactions (id, freezer_item_id, profile_id, action, quantity, weight_lbs, created_at)
+      VALUES (?, ?, ?, 'remove', ?, ?, ?)
+    `).run(generateId(), id, existing.profile_id, quantity, weightLbs, now);
     return { ...existing, quantity: newQty, updated_at: now };
   },
 
@@ -831,6 +836,118 @@ export const sqliteAdapter: DbAdapter = {
 
   async getFreezerItemProfileId(itemId: string): Promise<string | null> {
     const row = getDb().prepare('SELECT profile_id FROM freezer_inventory WHERE id = ?').get(itemId) as { profile_id: string } | undefined;
+    return row?.profile_id ?? null;
+  },
+
+  // --- Pantry ---
+
+  async getPantryItems(profileId: string): Promise<PantryItem[]> {
+    return getDb().prepare(`
+      SELECT * FROM pantry_items
+      WHERE profile_id = ? AND quantity > 0
+      ORDER BY name ASC, best_by_date ASC
+    `).all(profileId) as PantryItem[];
+  },
+
+  async addPantryItem(input: AddPantryInput, _userId: string): Promise<PantryItem> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const bestByDays = input.best_by_days ?? 365;
+    const bestByDate = input.best_by_date ?? (() => {
+      const dt = new Date(input.stored_date + 'T00:00:00');
+      dt.setDate(dt.getDate() + bestByDays);
+      return dt.toISOString().slice(0, 10);
+    })();
+    const item: PantryItem = {
+      id: generateId(),
+      profile_id: input.profile_id,
+      name: input.name.trim(),
+      brand: input.brand?.trim() || undefined,
+      category: input.category?.trim() || undefined,
+      quantity: input.quantity,
+      unit: input.unit?.trim() || 'unit',
+      location: input.location?.trim() ?? '',
+      stored_date: input.stored_date,
+      best_by_date: bestByDate,
+      best_by_days: bestByDays,
+      notes: input.notes?.trim() || undefined,
+      created_at: now,
+      updated_at: now,
+    };
+    const COLS = ['id', 'profile_id', 'name', 'brand', 'category', 'quantity', 'unit', 'location', 'stored_date', 'best_by_date', 'best_by_days', 'notes', 'created_at', 'updated_at'] as const;
+    d.prepare(`
+      INSERT INTO pantry_items (id, profile_id, name, brand, category, quantity, unit, location, stored_date, best_by_date, best_by_days, notes, created_at, updated_at)
+      VALUES (@id, @profile_id, @name, @brand, @category, @quantity, @unit, @location, @stored_date, @best_by_date, @best_by_days, @notes, @created_at, @updated_at)
+    `).run(nullify(item as unknown as Record<string, unknown>, COLS));
+    d.prepare(`
+      INSERT INTO pantry_transactions (id, pantry_item_id, profile_id, action, quantity, created_at)
+      VALUES (?, ?, ?, 'add', ?, ?)
+    `).run(generateId(), item.id, item.profile_id, item.quantity, now);
+    return item;
+  },
+
+  async updatePantryItem(id: string, updates: Partial<Pick<PantryItem, 'name' | 'brand' | 'category' | 'quantity' | 'unit' | 'location' | 'stored_date' | 'best_by_date' | 'best_by_days' | 'notes'>>): Promise<PantryItem> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM pantry_items WHERE id = ?').get(id) as PantryItem | undefined;
+    if (!existing) throw new Error(`Pantry item ${id} not found`);
+    const now = new Date().toISOString();
+    const bestByDays = updates.best_by_days ?? existing.best_by_days;
+    const storedDate = updates.stored_date ?? existing.stored_date;
+    const bestByDate = updates.best_by_date ?? (() => {
+      const dt = new Date(storedDate + 'T00:00:00');
+      dt.setDate(dt.getDate() + bestByDays);
+      return dt.toISOString().slice(0, 10);
+    })();
+    d.prepare(`
+      UPDATE pantry_items
+      SET name = ?, brand = ?, category = ?, quantity = ?, unit = ?, location = ?,
+          stored_date = ?, best_by_date = ?, best_by_days = ?, notes = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      updates.name ?? existing.name,
+      updates.brand ?? existing.brand ?? null,
+      updates.category ?? existing.category ?? null,
+      updates.quantity ?? existing.quantity,
+      updates.unit ?? existing.unit,
+      updates.location ?? existing.location,
+      storedDate,
+      bestByDate,
+      bestByDays,
+      updates.notes ?? existing.notes ?? null,
+      now,
+      id,
+    );
+    return d.prepare('SELECT * FROM pantry_items WHERE id = ?').get(id) as PantryItem;
+  },
+
+  async removePantryItem(id: string, quantity: number, _userId: string): Promise<PantryItem> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM pantry_items WHERE id = ?').get(id) as PantryItem | undefined;
+    if (!existing) throw new Error(`Pantry item ${id} not found`);
+    if (quantity > existing.quantity) throw new Error('Cannot remove more than available');
+    const now = new Date().toISOString();
+    const newQty = existing.quantity - quantity;
+    d.prepare('UPDATE pantry_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQty, now, id);
+    d.prepare(`
+      INSERT INTO pantry_transactions (id, pantry_item_id, profile_id, action, quantity, created_at)
+      VALUES (?, ?, ?, 'remove', ?, ?)
+    `).run(generateId(), id, existing.profile_id, quantity, now);
+    return { ...existing, quantity: newQty, updated_at: now };
+  },
+
+  async getPantryTransactions(profileId: string): Promise<PantryTransaction[]> {
+    return getDb().prepare(`
+      SELECT pt.*, pi.name AS item_name
+      FROM pantry_transactions pt
+      JOIN pantry_items pi ON pi.id = pt.pantry_item_id
+      WHERE pt.profile_id = ?
+      ORDER BY pt.created_at DESC
+      LIMIT 200
+    `).all(profileId) as PantryTransaction[];
+  },
+
+  async getPantryItemProfileId(id: string): Promise<string | null> {
+    const row = getDb().prepare('SELECT profile_id FROM pantry_items WHERE id = ?').get(id) as { profile_id: string } | undefined;
     return row?.profile_id ?? null;
   },
 };

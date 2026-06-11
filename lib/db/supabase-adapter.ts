@@ -16,6 +16,9 @@ import type {
   FreezerTransaction,
   FreezerLocation,
   AddFreezerInput,
+  PantryItem,
+  PantryTransaction,
+  AddPantryInput,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
@@ -600,12 +603,13 @@ export const supabaseAdapter: DbAdapter = {
     if (quantity > existing.quantity) throw new Error('Cannot remove more packs than available');
     const now = new Date().toISOString();
     const newQty = existing.quantity - quantity;
+    const weightLbs = existing.weight_lbs != null ? quantity * existing.weight_lbs : null;
     const { error } = await getSupabaseAdmin()
       .from('freezer_inventory').update({ quantity: newQty, updated_at: now }).eq('id', id);
     if (error) throw error;
     await getSupabaseAdmin().from('freezer_transactions').insert({
       id: generateId(), freezer_item_id: id, profile_id: existing.profile_id,
-      action: 'remove', quantity, created_at: now,
+      action: 'remove', quantity, weight_lbs: weightLbs, created_at: now,
     });
     return { ...existing, quantity: newQty, updated_at: now } as FreezerItem;
   },
@@ -711,5 +715,91 @@ export const supabaseAdapter: DbAdapter = {
     const { data, error } = await getSupabaseAdmin().from('freezer_inventory').update(patch).eq('id', id).select().single();
     if (error) throw error;
     return data as FreezerItem;
+  },
+
+  // --- Pantry ---
+
+  async getPantryItems(profileId: string): Promise<PantryItem[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('pantry_items').select('*').eq('profile_id', profileId)
+      .gt('quantity', 0).order('name').order('best_by_date');
+    if (error) throw error;
+    return (data ?? []) as PantryItem[];
+  },
+
+  async addPantryItem(input: AddPantryInput, _userId: string): Promise<PantryItem> {
+    const now = new Date().toISOString();
+    const bestByDays = input.best_by_days ?? 365;
+    const bestByDate = input.best_by_date ?? (() => {
+      const dt = new Date(input.stored_date + 'T00:00:00');
+      dt.setDate(dt.getDate() + bestByDays);
+      return dt.toISOString().slice(0, 10);
+    })();
+    const item = {
+      id: generateId(),
+      profile_id: input.profile_id,
+      name: input.name.trim(),
+      brand: input.brand?.trim() || null,
+      category: input.category?.trim() || null,
+      quantity: input.quantity,
+      unit: input.unit?.trim() || 'unit',
+      location: input.location?.trim() ?? '',
+      stored_date: input.stored_date,
+      best_by_date: bestByDate,
+      best_by_days: bestByDays,
+      notes: input.notes?.trim() || null,
+      created_at: now,
+      updated_at: now,
+    };
+    const { data, error } = await getSupabaseAdmin().from('pantry_items').insert(item).select().single();
+    if (error) throw error;
+    await getSupabaseAdmin().from('pantry_transactions').insert({
+      id: generateId(), pantry_item_id: item.id, profile_id: item.profile_id,
+      action: 'add', quantity: item.quantity, created_at: now,
+    });
+    return data as PantryItem;
+  },
+
+  async updatePantryItem(id: string, updates: Partial<Pick<PantryItem, 'name' | 'brand' | 'category' | 'quantity' | 'unit' | 'location' | 'stored_date' | 'best_by_date' | 'best_by_days' | 'notes'>>): Promise<PantryItem> {
+    const patch: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() };
+    const { data, error } = await getSupabaseAdmin().from('pantry_items').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data as PantryItem;
+  },
+
+  async removePantryItem(id: string, quantity: number, _userId: string): Promise<PantryItem> {
+    const { data: existing, error: fetchErr } = await getSupabaseAdmin()
+      .from('pantry_items').select('*').eq('id', id).single();
+    if (fetchErr || !existing) throw new Error(`Pantry item ${id} not found`);
+    if (quantity > existing.quantity) throw new Error('Cannot remove more than available');
+    const now = new Date().toISOString();
+    const newQty = existing.quantity - quantity;
+    const { error } = await getSupabaseAdmin()
+      .from('pantry_items').update({ quantity: newQty, updated_at: now }).eq('id', id);
+    if (error) throw error;
+    await getSupabaseAdmin().from('pantry_transactions').insert({
+      id: generateId(), pantry_item_id: id, profile_id: existing.profile_id,
+      action: 'remove', quantity, created_at: now,
+    });
+    return { ...existing, quantity: newQty, updated_at: now } as PantryItem;
+  },
+
+  async getPantryTransactions(profileId: string): Promise<PantryTransaction[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('pantry_transactions')
+      .select('*, pantry_items(name)')
+      .eq('profile_id', profileId)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    return (data ?? []).map((r: Record<string, unknown> & { pantry_items?: { name: string } }) => {
+      const { pantry_items, ...rest } = r;
+      return { ...rest, item_name: pantry_items?.name } as unknown as PantryTransaction;
+    });
+  },
+
+  async getPantryItemProfileId(id: string): Promise<string | null> {
+    const { data } = await getSupabaseAdmin().from('pantry_items').select('profile_id').eq('id', id).single();
+    return (data as { profile_id: string } | null)?.profile_id ?? null;
   },
 };

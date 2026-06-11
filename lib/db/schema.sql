@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS freezer_transactions (
   profile_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('add', 'remove')),
   quantity INTEGER NOT NULL,
+  weight_lbs REAL,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -139,6 +140,38 @@ CREATE TABLE IF NOT EXISTS freezer_locations (
   UNIQUE(profile_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_freezer_locations_profile ON freezer_locations(profile_id);
+
+-- Pantry inventory for household staples
+CREATE TABLE IF NOT EXISTS pantry_items (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  brand TEXT,
+  category TEXT,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  unit TEXT NOT NULL DEFAULT 'unit',
+  location TEXT NOT NULL DEFAULT '',
+  stored_date TEXT NOT NULL,
+  best_by_date TEXT,
+  best_by_days INTEGER NOT NULL DEFAULT 365,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CONSTRAINT positive_pantry_qty CHECK (quantity >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS pantry_transactions (
+  id TEXT PRIMARY KEY,
+  pantry_item_id TEXT NOT NULL REFERENCES pantry_items(id) ON DELETE CASCADE,
+  profile_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('add', 'remove')),
+  quantity INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_pantry_profile_id ON pantry_items(profile_id);
+CREATE INDEX IF NOT EXISTS idx_pantry_name ON pantry_items(name);
+CREATE INDEX IF NOT EXISTS idx_pantry_tx_profile_id ON pantry_transactions(profile_id);
 
 -- Cellar sharing: grant another user read or write access to a cellar profile
 CREATE TABLE IF NOT EXISTS cellar_shares (

@@ -290,6 +290,22 @@ export default function FreezerPage() {
 
   const registeredLocNames = useMemo(() => new Set(locations.map(l => l.name)), [locations]);
 
+  const consumptionStats = useMemo(() => {
+    const removeTxs = txs.filter(t => t.action === 'remove');
+    const totalPacks = removeTxs.reduce((s, t) => s + t.quantity, 0);
+    const weightTxs = removeTxs.filter(t => t.weight_lbs != null);
+    const totalWeight = weightTxs.length > 0 ? weightTxs.reduce((s, t) => s + (t.weight_lbs ?? 0), 0) : null;
+    const byAnimal = new Map<MeatAnimal, { packs: number; weight: number; hasWeight: boolean }>();
+    for (const t of removeTxs) {
+      const a = getAnimalForCut(t.meat_cut ?? '');
+      const cur = byAnimal.get(a) ?? { packs: 0, weight: 0, hasWeight: false };
+      cur.packs += t.quantity;
+      if (t.weight_lbs != null) { cur.weight += t.weight_lbs; cur.hasWeight = true; }
+      byAnimal.set(a, cur);
+    }
+    return { totalPacks, totalWeight, byAnimal, removeTxs };
+  }, [txs]);
+
   // Toggle a location pill on/off
   const toggleLoc = (key: string) => {
     setSelectedLocs(prev => {
@@ -415,8 +431,8 @@ export default function FreezerPage() {
   };
 
   // ── Remove ───────────────────────────────────────────────────────────────────
-  const handleRemove = async (item: FreezerItem) => {
-    const qty = Number(removeQty[item.id] ?? 1);
+  const handleRemove = async (item: FreezerItem, overrideQty?: number) => {
+    const qty = overrideQty ?? Number(removeQty[item.id] ?? 1);
     if (qty < 1 || qty > item.quantity) return;
     setRemoving(item.id);
     try {
@@ -469,7 +485,7 @@ export default function FreezerPage() {
 
   const totalPacks = items.reduce((s, i) => s + i.quantity, 0);
   const hasPriceData = items.some(i => i.price_per_lb != null);
-  const removeTxs = txs.filter(t => t.action === 'remove');
+  const { removeTxs } = consumptionStats;
   const pastBestByItems = items.filter(i => i.eat_by_date < TODAY);
   const hasSearch = searchQuery.trim() !== '';
 
@@ -540,6 +556,13 @@ export default function FreezerPage() {
                       className="text-xs px-2 py-1 rounded border text-muted-foreground hover:bg-accent transition-colors shrink-0"
                     >
                       <Edit2 className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => handleRemove(item, item.quantity)}
+                      disabled={removing === item.id}
+                      className="text-xs px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50"
+                    >
+                      {removing === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                     </button>
                   </div>
                 );
@@ -715,24 +738,58 @@ export default function FreezerPage() {
       )}
 
       {/* ── Consumption history ── */}
-      {txs.length > 0 && (
+      {removeTxs.length > 0 && (
         <div className="border rounded-lg overflow-hidden">
           <button
             onClick={() => setShowHistory(h => !h)}
             className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-accent/50 transition-colors"
           >
-            <span>Consumption History</span>
+            <span>Consumption History ({consumptionStats.totalPacks} packs consumed)</span>
             {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
           {showHistory && (
-            <div className="border-t px-4 py-3 space-y-1">
-              {removeTxs.slice(0, 30).map(t => (
-                <div key={t.id} className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</span>
-                  <span className="flex-1 px-3 truncate">{t.meat_cut}</span>
-                  <span className="text-muted-foreground">−{t.quantity}</span>
+            <div className="border-t divide-y">
+              {/* Stats summary */}
+              <div className="px-4 py-3 space-y-3 bg-muted/30">
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <span className="font-medium">{consumptionStats.totalPacks} packs total</span>
+                  {consumptionStats.totalWeight != null && (
+                    <span className="text-muted-foreground">{consumptionStats.totalWeight.toFixed(1)} lbs total</span>
+                  )}
                 </div>
-              ))}
+                {consumptionStats.byAnimal.size > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {ANIMAL_ORDER.filter(a => consumptionStats.byAnimal.has(a)).map(animal => {
+                      const s = consumptionStats.byAnimal.get(animal)!;
+                      return (
+                        <div key={animal} className={cn('rounded border px-2 py-1.5 text-xs', ANIMAL_COLORS[animal])}>
+                          <span className="font-medium">{ANIMAL_LABELS[animal]}</span>
+                          <span className="ml-2">{s.packs} pk</span>
+                          {s.hasWeight && <span className="ml-1 opacity-75">{s.weight.toFixed(1)} lbs</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* Transaction log */}
+              <div className="px-4 py-3 space-y-1">
+                {removeTxs.slice(0, 50).map(t => (
+                  <div key={t.id} className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground text-xs w-20 shrink-0">
+                      {new Date(t.created_at).toLocaleDateString()}
+                    </span>
+                    <span className="flex-1 truncate">{t.meat_cut}</span>
+                    <span className="text-muted-foreground tabular-nums">−{t.quantity} pk</span>
+                    {t.weight_lbs != null && (
+                      <span className="text-muted-foreground text-xs tabular-nums w-16 text-right">{t.weight_lbs.toFixed(1)} lbs</span>
+                    )}
+                  </div>
+                ))}
+                {removeTxs.length > 50 && (
+                  <p className="text-xs text-muted-foreground pt-1">{removeTxs.length - 50} older entries not shown</p>
+                )}
+              </div>
             </div>
           )}
         </div>
