@@ -289,6 +289,16 @@ export interface PantryTransaction {
   item_name?: string;
 }
 
+export interface PantryUsageSetting {
+  id: string;
+  profile_id: string;
+  item_name: string;
+  days_per_unit?: number;  // manual override: days to consume 1 unit; null = use calculated
+  reset_date?: string;     // ignore remove transactions before this date
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AddPantryInput {
   profile_id: string;
   name: string;
@@ -393,6 +403,8 @@ export interface DbAdapter {
   removePantryItem(id: string, quantity: number, userId: string): Promise<PantryItem>;
   getPantryTransactions(profileId: string): Promise<PantryTransaction[]>;
   getPantryItemProfileId(id: string): Promise<string | null>;
+  getPantryUsageSettings(profileId: string): Promise<PantryUsageSetting[]>;
+  upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null }): Promise<PantryUsageSetting>;
 
   // Profile-ID lookups for permission checks on item-scoped routes
   getInventoryProfileId(inventoryId: string): Promise<string | null>;

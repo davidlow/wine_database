@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, ShoppingBasket, Trash2, Edit2, ChevronDown, ChevronUp,
-  Loader2, AlertCircle, Search, X,
+  Loader2, AlertCircle, Search, X, RotateCcw, SlidersHorizontal, TrendingDown,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
-import type { PantryItem } from '@/types';
+import type { PantryItem, PantryTransaction, PantryUsageSetting } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { computeUsagePrediction, formatDays } from '@/lib/pantry-utils';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -234,13 +235,26 @@ export default function PantryPage() {
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeQty, setRemoveQty] = useState<Record<string, string>>({});
 
+  const [transactions, setTransactions] = useState<PantryTransaction[]>([]);
+  const [usageSettings, setUsageSettings] = useState<PantryUsageSetting[]>([]);
+  const [overrideItem, setOverrideItem] = useState<string | null>(null);
+  const [overrideDays, setOverrideDays] = useState('');
+  const [savingOverride, setSavingOverride] = useState(false);
+  const [savingReset, setSavingReset] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!activeProfile) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/pantry?profile_id=${activeProfile.id}`);
-      if (res.ok) setItems(await res.json());
+      const [itemsRes, txRes, settingsRes] = await Promise.all([
+        fetch(`/api/pantry?profile_id=${activeProfile.id}`),
+        fetch(`/api/pantry/transactions?profile_id=${activeProfile.id}`),
+        fetch(`/api/pantry/usage-settings?profile_id=${activeProfile.id}`),
+      ]);
+      if (itemsRes.ok) setItems(await itemsRes.json());
+      if (txRes.ok) setTransactions(await txRes.json());
+      if (settingsRes.ok) setUsageSettings(await settingsRes.json());
     } catch {
       setError('Failed to load pantry data');
     } finally {
@@ -285,6 +299,47 @@ export default function PantryPage() {
       i.location.toLowerCase().includes(q)
     );
   }, [items, searchQuery]);
+
+  const handleResetUsage = async (itemName: string) => {
+    if (!activeProfile) return;
+    setSavingReset(itemName);
+    try {
+      await fetch('/api/pantry/usage-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile_id: activeProfile.id,
+          item_name: itemName,
+          reset_date: new Date().toISOString().slice(0, 10),
+          days_per_unit: null,
+        }),
+      });
+      await load();
+    } finally {
+      setSavingReset(null);
+    }
+  };
+
+  const handleSaveOverride = async (itemName: string, daysPerUnit: number | null) => {
+    if (!activeProfile) return;
+    setSavingOverride(true);
+    try {
+      await fetch('/api/pantry/usage-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile_id: activeProfile.id,
+          item_name: itemName,
+          days_per_unit: daysPerUnit,
+        }),
+      });
+      setOverrideItem(null);
+      setOverrideDays('');
+      await load();
+    } finally {
+      setSavingOverride(false);
+    }
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -473,7 +528,14 @@ export default function PantryPage() {
       {/* Items list */}
       {!loading && filteredItems.length > 0 && (
         <div className="space-y-2">
-          {filteredItems.map(item => (
+          {filteredItems.map(item => {
+            const setting = usageSettings.find(s => s.item_name.toLowerCase() === item.name.toLowerCase());
+            const pred = computeUsagePrediction(transactions, item.name, setting?.reset_date);
+            const effectiveDays = setting?.days_per_unit ?? pred?.daysPerUnit;
+            const daysLeft = effectiveDays != null && item.quantity > 0
+              ? Math.round(item.quantity * effectiveDays)
+              : null;
+            return (
             <div key={item.id} className="border rounded-lg p-4 bg-card space-y-3">
               <div className="flex items-start gap-2 justify-between">
                 <div className="min-w-0">
@@ -498,6 +560,75 @@ export default function PantryPage() {
                 )}
                 {item.notes && <span className="col-span-2 italic">{item.notes}</span>}
               </div>
+
+              {/* Usage prediction — shown only when enough data (≥2 remove events) or manual override */}
+              {effectiveDays != null && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <TrendingDown className="h-3 w-3 text-primary/70 shrink-0" />
+                    {daysLeft != null && (
+                      <span className="font-medium text-foreground/80">~{formatDays(daysLeft)} of stock left</span>
+                    )}
+                    <span className="text-muted-foreground flex-1 truncate ml-1">
+                      {setting?.days_per_unit != null
+                        ? `1 ${item.unit} every ${Math.round(setting.days_per_unit)}d (custom)`
+                        : pred ? `1 ${item.unit} every ~${Math.round(pred.daysPerUnit)}d (${pred.eventCount} uses)` : null}
+                    </span>
+                    <button
+                      onClick={() => handleResetUsage(item.name)}
+                      disabled={savingReset === item.name}
+                      title="Reset: restart calculation from today"
+                      className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 shrink-0"
+                    >
+                      {savingReset === item.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (overrideItem === item.name) { setOverrideItem(null); setOverrideDays(''); }
+                        else { setOverrideItem(item.name); setOverrideDays(String(Math.round(effectiveDays))); }
+                      }}
+                      title="Manually adjust consumption rate"
+                      className={cn('p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0', overrideItem === item.name && 'bg-accent text-foreground')}
+                    >
+                      <SlidersHorizontal className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {overrideItem === item.name && (
+                    <div className="flex flex-wrap items-center gap-1.5 pl-4">
+                      <span className="text-xs text-muted-foreground">1 {item.unit} every</span>
+                      <input
+                        type="number" min="1"
+                        value={overrideDays}
+                        onChange={e => setOverrideDays(e.target.value)}
+                        className="w-14 h-6 text-xs text-center border rounded px-1 bg-background"
+                      />
+                      <span className="text-xs text-muted-foreground">days</span>
+                      <button
+                        onClick={() => handleSaveOverride(item.name, Number(overrideDays))}
+                        disabled={savingOverride || !overrideDays || Number(overrideDays) <= 0}
+                        className="text-xs px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      >
+                        {savingOverride ? <Loader2 className="h-3 w-3 animate-spin inline" /> : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => { setOverrideItem(null); setOverrideDays(''); }}
+                        className="text-xs px-2 py-0.5 rounded border text-muted-foreground hover:bg-accent transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      {setting?.days_per_unit != null && (
+                        <button
+                          onClick={() => handleSaveOverride(item.name, null)}
+                          disabled={savingOverride}
+                          className="text-xs text-primary hover:underline disabled:opacity-50"
+                        >
+                          Use calculated
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-2 pt-1 border-t">
                 <label className="text-xs text-muted-foreground">Remove</label>
@@ -526,7 +657,8 @@ export default function PantryPage() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

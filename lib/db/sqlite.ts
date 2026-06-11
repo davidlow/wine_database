@@ -21,6 +21,7 @@ import type {
   PantryItem,
   PantryTransaction,
   AddPantryInput,
+  PantryUsageSetting,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
@@ -949,5 +950,34 @@ export const sqliteAdapter: DbAdapter = {
   async getPantryItemProfileId(id: string): Promise<string | null> {
     const row = getDb().prepare('SELECT profile_id FROM pantry_items WHERE id = ?').get(id) as { profile_id: string } | undefined;
     return row?.profile_id ?? null;
+  },
+
+  async getPantryUsageSettings(profileId: string): Promise<PantryUsageSetting[]> {
+    return getDb().prepare(
+      'SELECT * FROM pantry_usage_settings WHERE profile_id = ? ORDER BY item_name ASC'
+    ).all(profileId) as PantryUsageSetting[];
+  },
+
+  async upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null }): Promise<PantryUsageSetting> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const existing = d.prepare(
+      'SELECT * FROM pantry_usage_settings WHERE profile_id = ? AND item_name = ?'
+    ).get(profileId, itemName) as PantryUsageSetting | undefined;
+
+    if (existing) {
+      const daysPer = 'days_per_unit' in updates ? (updates.days_per_unit ?? null) : (existing.days_per_unit ?? null);
+      const resetDate = 'reset_date' in updates ? (updates.reset_date ?? null) : (existing.reset_date ?? null);
+      d.prepare(
+        'UPDATE pantry_usage_settings SET days_per_unit = ?, reset_date = ?, updated_at = ? WHERE id = ?'
+      ).run(daysPer, resetDate, now, existing.id);
+      return d.prepare('SELECT * FROM pantry_usage_settings WHERE id = ?').get(existing.id) as PantryUsageSetting;
+    }
+
+    const id = generateId();
+    d.prepare(
+      'INSERT INTO pantry_usage_settings (id, profile_id, item_name, days_per_unit, reset_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, profileId, itemName, updates.days_per_unit ?? null, updates.reset_date ?? null, now, now);
+    return d.prepare('SELECT * FROM pantry_usage_settings WHERE id = ?').get(id) as PantryUsageSetting;
   },
 };

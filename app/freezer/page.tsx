@@ -485,8 +485,6 @@ export default function FreezerPage() {
   const hasPriceData = items.some(i => i.price_per_lb != null);
   const { removeTxs } = consumptionStats;
   const pastBestByItems = items.filter(i => i.eat_by_date < TODAY);
-  const hasSearch = searchQuery.trim() !== '';
-
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
 
@@ -585,8 +583,17 @@ export default function FreezerPage() {
         </div>
       )}
 
-      {/* ── Search results (only when a query is active) ── */}
-      {!loading && hasSearch && (
+      {/* ── Empty state ── */}
+      {!loading && items.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground border border-dashed rounded-lg">
+          <Snowflake className="h-8 w-8 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">No items in the freezer yet.</p>
+          <p className="text-xs mt-1">Use &ldquo;Add Item&rdquo; to log your first pack.</p>
+        </div>
+      )}
+
+      {/* ── Item list ── */}
+      {!loading && items.length > 0 && (
         <div className="space-y-3">
           {/* Location pills */}
           <div className="flex items-center gap-2 flex-wrap">

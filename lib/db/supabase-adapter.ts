@@ -19,6 +19,7 @@ import type {
   PantryItem,
   PantryTransaction,
   AddPantryInput,
+  PantryUsageSetting,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
@@ -801,5 +802,29 @@ export const supabaseAdapter: DbAdapter = {
   async getPantryItemProfileId(id: string): Promise<string | null> {
     const { data } = await getSupabaseAdmin().from('pantry_items').select('profile_id').eq('id', id).single();
     return (data as { profile_id: string } | null)?.profile_id ?? null;
+  },
+
+  async getPantryUsageSettings(profileId: string): Promise<PantryUsageSetting[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('pantry_usage_settings').select('*').eq('profile_id', profileId).order('item_name');
+    if (error) throw error;
+    return (data ?? []) as PantryUsageSetting[];
+  },
+
+  async upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null }): Promise<PantryUsageSetting> {
+    const now = new Date().toISOString();
+    const row = {
+      profile_id: profileId,
+      item_name: itemName,
+      days_per_unit: updates.days_per_unit ?? null,
+      reset_date: updates.reset_date ?? null,
+      updated_at: now,
+    };
+    const { data, error } = await getSupabaseAdmin()
+      .from('pantry_usage_settings')
+      .upsert({ ...row, id: generateId(), created_at: now }, { onConflict: 'profile_id,item_name' })
+      .select().single();
+    if (error) throw error;
+    return data as PantryUsageSetting;
   },
 };

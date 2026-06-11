@@ -61,6 +61,15 @@ export function useBarcode(onDetected: (barcode: string) => void) {
   const stop = useCallback(() => {
     controlsRef.current?.stop();
     controlsRef.current = null;
+
+    // ZXing's stop() may not release the camera hardware. Explicitly stop
+    // every MediaStreamTrack so the browser indicator light goes off.
+    const video = videoRef.current;
+    if (video?.srcObject) {
+      (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+
     lastDetectionRef.current = null;
     setStatus('idle');
   }, []);

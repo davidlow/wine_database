@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Wine, ScanLine, Layers, BarChart2, Building2, UtensilsCrossed, Snowflake, ShoppingBasket } from 'lucide-react';
+import { Home, Wine, ScanLine, Layers, BarChart2, Building2, UtensilsCrossed, Snowflake, ShoppingBasket, Moon, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
 import { useProfile } from '@/hooks/useProfile';
+import { useTheme } from 'next-themes';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { activeProfile } = useProfile();
+  const { resolvedTheme, setTheme } = useTheme();
   // Go directly to the active cellar when one is saved; fall back to the list
   const cellarsHref = activeProfile ? `/profiles/${activeProfile.id}` : '/profiles';
 
@@ -76,8 +78,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             Statistics
           </Link>
         </nav>
-        <div className="px-3 py-3 border-t">
+        <div className="px-3 py-3 border-t space-y-2">
           <ProfileSelector />
+          <button
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            {resolvedTheme === 'dark' ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
+            {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+          </button>
         </div>
       </aside>
 
@@ -89,7 +98,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Wine className="h-4 w-4 text-primary" />
             Wine Cellar
           </h1>
-          <ProfileSelector compact />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              aria-label="Toggle theme"
+            >
+              {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <ProfileSelector compact />
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0">

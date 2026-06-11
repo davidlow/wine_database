@@ -173,6 +173,18 @@ CREATE INDEX IF NOT EXISTS idx_pantry_profile_id ON pantry_items(profile_id);
 CREATE INDEX IF NOT EXISTS idx_pantry_name ON pantry_items(name);
 CREATE INDEX IF NOT EXISTS idx_pantry_tx_profile_id ON pantry_transactions(profile_id);
 
+CREATE TABLE IF NOT EXISTS pantry_usage_settings (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  item_name TEXT NOT NULL,
+  days_per_unit REAL,
+  reset_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(profile_id, item_name)
+);
+CREATE INDEX IF NOT EXISTS idx_pantry_usage_profile ON pantry_usage_settings(profile_id);
+
 -- Cellar sharing: grant another user read or write access to a cellar profile
 CREATE TABLE IF NOT EXISTS cellar_shares (
   id TEXT PRIMARY KEY,

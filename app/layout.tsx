@@ -3,6 +3,7 @@ import { Geist } from 'next/font/google';
 import './globals.css';
 import { ProfileProvider } from '@/hooks/useProfile';
 import AppShell from '@/components/AppShell';
+import { ThemeProvider } from '@/components/ThemeProvider';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -20,11 +21,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geist.variable} h-full`}>
+    <html lang="en" className={`${geist.variable} h-full`} suppressHydrationWarning>
       <body className="h-full bg-background text-foreground antialiased">
-        <ProfileProvider>
-          <AppShell>{children}</AppShell>
-        </ProfileProvider>
+        <ThemeProvider>
+          <ProfileProvider>
+            <AppShell>{children}</AppShell>
+          </ProfileProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
