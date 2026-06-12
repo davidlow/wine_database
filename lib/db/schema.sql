@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   user_id TEXT NOT NULL,
   name TEXT NOT NULL,
   description TEXT,
+  group_name TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -24,6 +25,13 @@ CREATE TABLE IF NOT EXISTS wines (
   drink_by_year INTEGER,
   barcode TEXT UNIQUE,
   image_url TEXT,
+  label_image TEXT,
+  acidity REAL,
+  tannin REAL,
+  alcohol REAL,
+  sweetness REAL,
+  body REAL,
+  fruit_profile TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -179,6 +187,7 @@ CREATE TABLE IF NOT EXISTS pantry_usage_settings (
   item_name TEXT NOT NULL,
   days_per_unit REAL,
   reset_date TEXT,
+  date_mode TEXT DEFAULT 'full',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(profile_id, item_name)

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Home, Wine, ScanLine, Layers, BarChart2, Building2, UtensilsCrossed, Snowflake, ShoppingBasket, Moon, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
@@ -12,6 +13,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { activeProfile } = useProfile();
   const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   // Go directly to the active cellar when one is saved; fall back to the list
   const cellarsHref = activeProfile ? `/profiles/${activeProfile.id}` : '/profiles';
 
@@ -84,8 +87,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
           >
-            {resolvedTheme === 'dark' ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
-            {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+            {mounted && (resolvedTheme === 'dark' ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />)}
+            {mounted ? (resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode') : 'Toggle theme'}
           </button>
         </div>
       </aside>
@@ -104,7 +107,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
               aria-label="Toggle theme"
             >
-              {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {mounted && (resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />)}
             </button>
             <ProfileSelector compact />
           </div>
