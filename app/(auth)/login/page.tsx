@@ -13,13 +13,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Dev mode: bypass auth
-  const isDevMode = process.env.NEXT_PUBLIC_DATABASE_PROVIDER !== 'supabase';
-  if (isDevMode) {
-    router.replace('/');
-    return null;
-  }
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);

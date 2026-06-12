@@ -14,12 +14,6 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const isDevMode = process.env.NEXT_PUBLIC_DATABASE_PROVIDER !== 'supabase';
-  if (isDevMode) {
-    router.replace('/');
-    return null;
-  }
-
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
