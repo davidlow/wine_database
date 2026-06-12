@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     const setting = await db.upsertPantryUsageSetting(body.profile_id, body.item_name, {
       days_per_unit: body.days_per_unit != null ? Number(body.days_per_unit) : null,
       reset_date: body.reset_date ?? null,
+      date_mode: body.date_mode ?? null,
     });
     return NextResponse.json(setting);
   } catch (err) {

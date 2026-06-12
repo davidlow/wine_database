@@ -58,6 +58,7 @@ function openDb(resolvedPath: string): Database.Database {
   try { conn.exec('ALTER TABLE wines ADD COLUMN body REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_profile TEXT'); } catch {}
   try { conn.exec('ALTER TABLE freezer_transactions ADD COLUMN weight_lbs REAL'); } catch {}
+  try { conn.exec("ALTER TABLE pantry_usage_settings ADD COLUMN date_mode TEXT DEFAULT 'full'"); } catch {}
   return conn;
 }
 
@@ -854,11 +855,17 @@ export const sqliteAdapter: DbAdapter = {
     const d = getDb();
     const now = new Date().toISOString();
     const bestByDays = input.best_by_days ?? 365;
-    const bestByDate = input.best_by_date ?? (() => {
-      const dt = new Date(input.stored_date + 'T00:00:00');
-      dt.setDate(dt.getDate() + bestByDays);
-      return dt.toISOString().slice(0, 10);
-    })();
+    // null best_by_date or best_by_days===0 means no expiry tracking
+    const bestByDate: string | null =
+      input.best_by_date !== undefined
+        ? input.best_by_date
+        : bestByDays === 0
+          ? null
+          : (() => {
+              const dt = new Date(input.stored_date + 'T00:00:00');
+              dt.setDate(dt.getDate() + bestByDays);
+              return dt.toISOString().slice(0, 10);
+            })();
     const item: PantryItem = {
       id: generateId(),
       profile_id: input.profile_id,
@@ -869,7 +876,7 @@ export const sqliteAdapter: DbAdapter = {
       unit: input.unit?.trim() || 'unit',
       location: input.location?.trim() ?? '',
       stored_date: input.stored_date,
-      best_by_date: bestByDate,
+      best_by_date: bestByDate ?? undefined,
       best_by_days: bestByDays,
       notes: input.notes?.trim() || undefined,
       created_at: now,
@@ -958,7 +965,7 @@ export const sqliteAdapter: DbAdapter = {
     ).all(profileId) as PantryUsageSetting[];
   },
 
-  async upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null }): Promise<PantryUsageSetting> {
+  async upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null; date_mode?: import('@/types').PantryDateMode | null }): Promise<PantryUsageSetting> {
     const d = getDb();
     const now = new Date().toISOString();
     const existing = d.prepare(
@@ -968,16 +975,17 @@ export const sqliteAdapter: DbAdapter = {
     if (existing) {
       const daysPer = 'days_per_unit' in updates ? (updates.days_per_unit ?? null) : (existing.days_per_unit ?? null);
       const resetDate = 'reset_date' in updates ? (updates.reset_date ?? null) : (existing.reset_date ?? null);
+      const dateMode = 'date_mode' in updates ? (updates.date_mode ?? 'full') : (existing.date_mode ?? 'full');
       d.prepare(
-        'UPDATE pantry_usage_settings SET days_per_unit = ?, reset_date = ?, updated_at = ? WHERE id = ?'
-      ).run(daysPer, resetDate, now, existing.id);
+        'UPDATE pantry_usage_settings SET days_per_unit = ?, reset_date = ?, date_mode = ?, updated_at = ? WHERE id = ?'
+      ).run(daysPer, resetDate, dateMode, now, existing.id);
       return d.prepare('SELECT * FROM pantry_usage_settings WHERE id = ?').get(existing.id) as PantryUsageSetting;
     }
 
     const id = generateId();
     d.prepare(
-      'INSERT INTO pantry_usage_settings (id, profile_id, item_name, days_per_unit, reset_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, profileId, itemName, updates.days_per_unit ?? null, updates.reset_date ?? null, now, now);
+      'INSERT INTO pantry_usage_settings (id, profile_id, item_name, days_per_unit, reset_date, date_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, profileId, itemName, updates.days_per_unit ?? null, updates.reset_date ?? null, updates.date_mode ?? 'full', now, now);
     return d.prepare('SELECT * FROM pantry_usage_settings WHERE id = ?').get(id) as PantryUsageSetting;
   },
 };

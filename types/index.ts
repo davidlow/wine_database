@@ -289,12 +289,15 @@ export interface PantryTransaction {
   item_name?: string;
 }
 
+export type PantryDateMode = 'full' | 'no_best_by' | 'no_dates';
+
 export interface PantryUsageSetting {
   id: string;
   profile_id: string;
   item_name: string;
   days_per_unit?: number;  // manual override: days to consume 1 unit; null = use calculated
   reset_date?: string;     // ignore remove transactions before this date
+  date_mode?: PantryDateMode; // 'full' = track both dates, 'no_best_by' = stored date only, 'no_dates' = no date tracking
   created_at: string;
   updated_at: string;
 }
@@ -308,7 +311,7 @@ export interface AddPantryInput {
   unit?: string;
   location?: string;
   stored_date: string;
-  best_by_date?: string;
+  best_by_date?: string | null;
   best_by_days?: number;
   notes?: string;
 }
@@ -404,7 +407,7 @@ export interface DbAdapter {
   getPantryTransactions(profileId: string): Promise<PantryTransaction[]>;
   getPantryItemProfileId(id: string): Promise<string | null>;
   getPantryUsageSettings(profileId: string): Promise<PantryUsageSetting[]>;
-  upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null }): Promise<PantryUsageSetting>;
+  upsertPantryUsageSetting(profileId: string, itemName: string, updates: { days_per_unit?: number | null; reset_date?: string | null; date_mode?: PantryDateMode | null }): Promise<PantryUsageSetting>;
 
   // Profile-ID lookups for permission checks on item-scoped routes
   getInventoryProfileId(inventoryId: string): Promise<string | null>;
