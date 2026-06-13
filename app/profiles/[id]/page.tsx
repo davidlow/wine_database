@@ -456,7 +456,10 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
   }));
 
   const allLocations: DisplayLocation[] = [
-    ...registeredLocations,
+    ...registeredLocations.map(loc => ({
+      ...loc,
+      current_quantity: inventory.filter(i => i.location === loc.name).reduce((s, i) => s + i.quantity, 0),
+    })),
     ...virtualLocations,
   ].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -598,7 +601,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
             <div className="flex items-center gap-2">
               <Link
                 href={`/profiles/${id}/location?name=${encodeURIComponent(loc.name)}`}
-                className="text-sm font-medium hover:underline text-primary truncate"
+                className="text-sm font-medium hover:underline text-primary line-clamp-2 break-words"
               >
                 {loc.name}
               </Link>
