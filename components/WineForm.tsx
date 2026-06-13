@@ -126,7 +126,7 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
   const set = <K extends keyof WineFormData>(key: K, value: WineFormData[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const handleLabelCapture = async (imageBase64: string) => {
+  const handleLabelCapture = async ({ gemini, thumbnail }: { gemini: string; thumbnail: string }) => {
     setShowLabelCapture(false);
     setLabelScanning(true);
     setLabelScanMsg(null);
@@ -134,13 +134,13 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
       const res = await fetch('/api/label-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, barcode: form.barcode || undefined }),
+        body: JSON.stringify({ imageBase64: gemini, barcode: form.barcode || undefined }),
       });
       const result: WineLookupResult = await res.json();
       if (result.found) {
         setForm(prev => ({
           ...prev,
-          label_image: imageBase64,
+          label_image: thumbnail,
           name: result.name ?? prev.name,
           producer: result.producer ?? prev.producer,
           variety: result.variety ?? prev.variety,
@@ -163,8 +163,8 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
         }));
         setLabelScanMsg('Label scanned — fields updated from AI. Review and correct as needed.');
       } else {
-        // Still save the photo even if AI couldn't identify the wine
-        setForm(prev => ({ ...prev, label_image: imageBase64 }));
+        // Still save the thumbnail even if AI couldn't identify the wine
+        setForm(prev => ({ ...prev, label_image: thumbnail }));
         setLabelScanMsg('Label photo saved, but the wine could not be identified. Fields unchanged.');
       }
     } catch {

@@ -72,15 +72,15 @@ export default function ScannerPage() {
     setLabelFoodPairings([]);
   };
 
-  const handleLabelCapture = async (imageBase64: string) => {
-    setCapturedLabelImage(imageBase64);
+  const handleLabelCapture = async ({ gemini, thumbnail }: { gemini: string; thumbnail: string }) => {
+    setCapturedLabelImage(thumbnail);
     setScanState('analyzing-label');
     setErrorMessage(null);
     try {
       const res = await fetch('/api/label-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, barcode: scannedCode }),
+        body: JSON.stringify({ imageBase64: gemini, barcode: scannedCode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed');

@@ -96,7 +96,7 @@ export default function BulkScanPage() {
     }
   }, []);
 
-  const handleLabelCapture = async (barcode: string, imageBase64: string) => {
+  const handleLabelCapture = async (barcode: string, { gemini }: { gemini: string; thumbnail: string }) => {
     setCapturingLabel(null);
     setScanEntries(prev => prev.map(e => e.barcode === barcode ? { ...e, state: 'label-scanning' } : e));
 
@@ -104,7 +104,7 @@ export default function BulkScanPage() {
       const res = await fetch('/api/label-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, barcode }),
+        body: JSON.stringify({ imageBase64: gemini, barcode }),
       });
       const result: WineLookupResult = await res.json();
 

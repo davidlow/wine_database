@@ -3,24 +3,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2, X } from 'lucide-react';
 
-// Larger size + higher quality than before so Gemini can read fine print
-const TARGET_W = 400;
-const TARGET_H = 600;
-const WEBP_QUALITY = 0.7;
-
-async function processLabelImage(source: HTMLCanvasElement): Promise<string> {
-  const ratio = Math.min(TARGET_W / source.width, TARGET_H / source.height);
+async function resizeToWebP(source: HTMLCanvasElement, maxW: number, maxH: number, quality: number): Promise<string> {
+  const ratio = Math.min(maxW / source.width, maxH / source.height);
   const w = Math.round(source.width * ratio);
   const h = Math.round(source.height * ratio);
   const out = document.createElement('canvas');
   out.width = w;
   out.height = h;
   out.getContext('2d')!.drawImage(source, 0, 0, w, h);
-  return out.toDataURL('image/webp', WEBP_QUALITY).split(',')[1];
+  return out.toDataURL('image/webp', quality).split(',')[1];
+}
+
+export interface LabelCaptureResult {
+  gemini: string;    // 400×600 @ 0.7 — sent to the label-scan API
+  thumbnail: string; // 150×225 @ 0.35 — stored in the database
 }
 
 interface Props {
-  onCapture: (imageBase64: string) => void;
+  onCapture: (result: LabelCaptureResult) => void;
   onCancel: () => void;
 }
 
@@ -107,8 +107,11 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
     ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
 
     try {
-      const base64 = await processLabelImage(raw);
-      onCapture(base64);
+      const [gemini, thumbnail] = await Promise.all([
+        resizeToWebP(raw, 400, 600, 0.7),
+        resizeToWebP(raw, 150, 225, 0.35),
+      ]);
+      onCapture({ gemini, thumbnail });
     } finally {
       setProcessing(false);
     }
