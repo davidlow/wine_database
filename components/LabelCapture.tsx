@@ -3,12 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2, X } from 'lucide-react';
 
-// Stored label dimensions and quality — small enough for ~5-10KB per image
-const TARGET_W = 200;
-const TARGET_H = 300;
-const WEBP_QUALITY = 0.45;
+// Larger size + higher quality than before so Gemini can read fine print
+const TARGET_W = 400;
+const TARGET_H = 600;
+const WEBP_QUALITY = 0.7;
 
-// Resize + convert to WebP. Returns base64 without data: prefix.
 async function processLabelImage(source: HTMLCanvasElement): Promise<string> {
   const ratio = Math.min(TARGET_W / source.width, TARGET_H / source.height);
   const w = Math.round(source.width * ratio);
@@ -28,6 +27,7 @@ interface Props {
 export default function LabelCapture({ onCapture, onCancel }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const guideRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -65,17 +65,46 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
   const capture = async () => {
     const video = videoRef.current;
-    if (!video || !ready || processing) return;
+    const guide = guideRef.current;
+    if (!video || !guide || !ready || processing) return;
     setProcessing(true);
 
+    // Measure where the guide box sits on screen vs. the video container
+    const containerRect = video.getBoundingClientRect();
+    const guideRect = guide.getBoundingClientRect();
+
+    // Native video dimensions
+    const nativeW = video.videoWidth;
+    const nativeH = video.videoHeight;
+
+    // With object-cover the video fills the container — scale = max of both axes
+    const displayW = containerRect.width;
+    const displayH = containerRect.height;
+    const scale = Math.max(displayW / nativeW, displayH / nativeH);
+
+    // Top-left of the rendered video relative to the container (may be negative = cropped)
+    const videoOffsetX = (displayW - nativeW * scale) / 2;
+    const videoOffsetY = (displayH - nativeH * scale) / 2;
+
+    // Guide box position relative to the video container, in display pixels
+    const guideLeft = guideRect.left - containerRect.left;
+    const guideTop = guideRect.top - containerRect.top;
+    const guideW = guideRect.width;
+    const guideH = guideRect.height;
+
+    // Map guide box to native video pixel coordinates
+    const srcX = Math.max(0, (guideLeft - videoOffsetX) / scale);
+    const srcY = Math.max(0, (guideTop - videoOffsetY) / scale);
+    const srcW = Math.min(nativeW - srcX, guideW / scale);
+    const srcH = Math.min(nativeH - srcY, guideH / scale);
+
+    // Draw only the guide region onto a canvas
     const raw = document.createElement('canvas');
-    raw.width = video.videoWidth;
-    raw.height = video.videoHeight;
+    raw.width = Math.round(srcW);
+    raw.height = Math.round(srcH);
     const ctx = raw.getContext('2d');
     if (!ctx) { setProcessing(false); return; }
-
-    // Browser applies EXIF orientation when drawing from <video>
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
 
     try {
       const base64 = await processLabelImage(raw);
@@ -105,8 +134,8 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
         {ready && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            {/* Portrait guide frame with TOP/BOTTOM orientation markers */}
-            <div className="relative w-2/5 h-4/5">
+            {/* Guide frame — slightly expanded vs previous; ref lets capture() measure exact position */}
+            <div ref={guideRef} className="relative w-1/2 h-[88%]">
               {/* TOP label */}
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-center">
                 <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">
@@ -115,7 +144,7 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
                 <div className="w-px h-2 bg-white/60 mx-auto mt-0.5" />
               </div>
               {/* Guide box */}
-              <div className="w-full h-full border-2 border-white/70 rounded-md" />
+              <div className="w-full h-full border-2 border-white/80 rounded-md" />
               {/* BOTTOM label */}
               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-center">
                 <div className="w-px h-2 bg-white/60 mx-auto mb-0.5" />

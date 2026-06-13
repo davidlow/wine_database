@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Camera, Loader2, X } from 'lucide-react';
 import type { Wine, WineType } from '@/types';
 import type { WineLookupResult } from '@/lib/wine-lookup/types';
 import { cn } from '@/lib/utils';
 import SearchSuggest from '@/components/SearchSuggest';
+import LabelCapture from '@/components/LabelCapture';
 
 type WineFormData = Omit<Wine, 'id' | 'created_at' | 'updated_at'>;
 
@@ -108,6 +109,7 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
     drink_by_year: merged.drink_by_year ?? (currentYear + 10),
     barcode: merged.barcode ?? '',
     image_url: merged.image_url ?? '',
+    label_image: (merged as Partial<Wine>).label_image,
     acidity: (merged as Partial<Wine>).acidity,
     tannin: (merged as Partial<Wine>).tannin,
     alcohol: (merged as Partial<Wine>).alcohol,
@@ -117,9 +119,60 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLabelCapture, setShowLabelCapture] = useState(false);
+  const [labelScanning, setLabelScanning] = useState(false);
+  const [labelScanMsg, setLabelScanMsg] = useState<string | null>(null);
 
   const set = <K extends keyof WineFormData>(key: K, value: WineFormData[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  const handleLabelCapture = async (imageBase64: string) => {
+    setShowLabelCapture(false);
+    setLabelScanning(true);
+    setLabelScanMsg(null);
+    try {
+      const res = await fetch('/api/label-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, barcode: form.barcode || undefined }),
+      });
+      const result: WineLookupResult = await res.json();
+      if (result.found) {
+        setForm(prev => ({
+          ...prev,
+          label_image: imageBase64,
+          name: result.name ?? prev.name,
+          producer: result.producer ?? prev.producer,
+          variety: result.variety ?? prev.variety,
+          wine_type: result.wine_type ?? prev.wine_type,
+          region: result.region ?? prev.region,
+          appellation: result.appellation ?? prev.appellation,
+          country: result.country ?? prev.country,
+          vintage_year: result.vintage_year ?? prev.vintage_year,
+          description: result.description ?? prev.description,
+          average_price: result.average_price ?? prev.average_price,
+          alcohol_content: result.alcohol_content ?? prev.alcohol_content,
+          drink_from_year: result.drink_from_year ?? prev.drink_from_year,
+          drink_by_year: result.drink_by_year ?? prev.drink_by_year,
+          acidity: result.acidity ?? prev.acidity,
+          tannin: result.tannin ?? prev.tannin,
+          alcohol: result.alcohol ?? prev.alcohol,
+          sweetness: result.sweetness ?? prev.sweetness,
+          body: result.body ?? prev.body,
+          fruit_profile: result.fruit_profile ?? prev.fruit_profile,
+        }));
+        setLabelScanMsg('Label scanned — fields updated from AI. Review and correct as needed.');
+      } else {
+        // Still save the photo even if AI couldn't identify the wine
+        setForm(prev => ({ ...prev, label_image: imageBase64 }));
+        setLabelScanMsg('Label photo saved, but the wine could not be identified. Fields unchanged.');
+      }
+    } catch {
+      setLabelScanMsg('Label scan failed — please try again.');
+    } finally {
+      setLabelScanning(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,6 +347,52 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
           <input className={inputCls} type="url" value={form.image_url ?? ''} onChange={(e) => set('image_url', e.target.value)} placeholder="https://…" />
         </Field>
 
+        <div className="sm:col-span-2 space-y-2">
+          <label className="block text-sm font-medium">Label Photo</label>
+          {form.label_image ? (
+            <div className="flex items-start gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`data:image/webp;base64,${form.label_image}`}
+                alt="Wine label"
+                className="h-24 w-auto rounded border object-contain bg-muted"
+              />
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLabelCapture(true)}
+                  disabled={labelScanning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  {labelScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                  {labelScanning ? 'Scanning…' : 'Retake Photo'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { set('label_image', undefined); setLabelScanMsg(null); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Remove Photo
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowLabelCapture(true)}
+              disabled={labelScanning}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md border text-sm hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              {labelScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              {labelScanning ? 'Scanning…' : 'Scan Label'}
+            </button>
+          )}
+          {labelScanMsg && (
+            <p className="text-xs text-muted-foreground">{labelScanMsg}</p>
+          )}
+        </div>
+
         <div className="sm:col-span-2">
           <Field label="Description / Notes">
             <textarea
@@ -352,6 +451,28 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
           </button>
         )}
       </div>
+
+      {/* Full-screen label capture overlay */}
+      {showLabelCapture && (
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+          <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowLabelCapture(false)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <p className="text-sm font-medium">Scan Wine Label</p>
+          </div>
+          <div className="flex-1 overflow-auto p-4">
+            <LabelCapture
+              onCapture={handleLabelCapture}
+              onCancel={() => setShowLabelCapture(false)}
+            />
+          </div>
+        </div>
+      )}
     </form>
   );
 }
