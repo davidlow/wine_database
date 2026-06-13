@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserId } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { lookupByBarcodeOpenFoodFacts } from '@/lib/wine-lookup/open-food-facts';
-import { lookupBarcodesBatch } from '@/lib/wine-lookup/gemini-batch';
 import type { BulkScanItem } from '@/types';
 
 export async function POST(request: NextRequest) {
@@ -54,43 +53,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    // Step 2: send all still-unknown barcodes to Gemini in one call
-    const unknownBarcodes = results.filter(r => !r.found).map(r => r.barcode);
-
-    if (unknownBarcodes.length > 0 && process.env.GEMINI_API_KEY) {
-      try {
-        const geminiResults = await lookupBarcodesBatch(unknownBarcodes);
-        const geminiMap = new Map(geminiResults.map(r => [r.barcode, r]));
-
-        for (const item of results) {
-          if (!item.found) {
-            const gr = geminiMap.get(item.barcode);
-            if (gr?.found && gr.name) {
-              Object.assign(item, {
-                found: true,
-                name: gr.name,
-                producer: gr.producer,
-                vintage_year: gr.vintage_year,
-                variety: gr.variety,
-                wine_type: gr.wine_type,
-                region: gr.region,
-                appellation: gr.appellation,
-                country: gr.country,
-                average_price: gr.average_price,
-                drink_from_year: gr.drink_from_year,
-                drink_by_year: gr.drink_by_year,
-                confidence: gr.confidence,
-                source: 'gemini-batch',
-              });
-            }
-          }
-        }
-      } catch (err) {
-        // Gemini failure is non-fatal — items remain as "not found"
-        console.error('[Gemini batch lookup]', err);
-      }
-    }
-
+    // Unknown barcodes are returned as found:false — the caller handles label scanning.
     return NextResponse.json(results);
   } catch (err) {
     console.error('[POST /api/barcode/batch]', err);

@@ -18,14 +18,14 @@ interface Props {
 interface AddForm {
   profile_id: string;
   location: string;
-  quantity: number;
+  quantity: string;
   purchase_price: string;
   purchase_date: string;
 }
 
 interface MoveForm {
   new_location: string;
-  quantity: number;
+  quantity: string;
 }
 
 export default function BottleManager({ wineId, profiles, inventory, onRefresh, suggestedPrice }: Props) {
@@ -33,14 +33,14 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
   const [addForm, setAddForm] = useState<AddForm>({
     profile_id: profiles[0]?.id ?? '',
     location: '',
-    quantity: 1,
+    quantity: '1',
     purchase_price: suggestedPrice != null ? String(suggestedPrice) : '',
     purchase_date: '',
   });
   const [addLoading, setAddLoading] = useState(false);
   const [removeLoading, setRemoveLoading] = useState<string | null>(null);
   const [moveItemId, setMoveItemId] = useState<string | null>(null);
-  const [moveForm, setMoveForm] = useState<MoveForm>({ new_location: '', quantity: 1 });
+  const [moveForm, setMoveForm] = useState<MoveForm>({ new_location: '', quantity: '1' });
   const [moveLoading, setMoveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +58,7 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
           wine_id: wineId,
           profile_id: addForm.profile_id,
           location: addForm.location.trim(),
-          quantity: addForm.quantity,
+          quantity: Math.max(1, parseInt(addForm.quantity) || 1),
           purchase_price: addForm.purchase_price ? Number(addForm.purchase_price) : undefined,
           purchase_date: addForm.purchase_date || undefined,
         }),
@@ -68,7 +68,7 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
       setAddForm({
         profile_id: profiles[0]?.id ?? '',
         location: '',
-        quantity: 1,
+        quantity: '1',
         purchase_price: suggestedPrice != null ? String(suggestedPrice) : '',
         purchase_date: '',
       });
@@ -100,7 +100,7 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
 
   const startMove = (item: CellarInventory) => {
     setMoveItemId(item.id);
-    setMoveForm({ new_location: '', quantity: 1 });
+    setMoveForm({ new_location: '', quantity: '1' });
     setError(null);
   };
 
@@ -118,7 +118,7 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           new_location: moveForm.new_location.trim(),
-          quantity: moveForm.quantity,
+          quantity: Math.max(1, parseInt(moveForm.quantity) || 1),
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -173,7 +173,8 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
                 type="number"
                 className={inputCls}
                 value={addForm.quantity}
-                onChange={(e) => setAddForm((p) => ({ ...p, quantity: Math.max(1, Number(e.target.value)) }))}
+                onChange={(e) => setAddForm((p) => ({ ...p, quantity: e.target.value }))}
+                onBlur={(e) => setAddForm((p) => ({ ...p, quantity: String(Math.max(1, parseInt(e.target.value) || 1)) }))}
                 min={1}
                 required
               />
@@ -317,7 +318,8 @@ export default function BottleManager({ wineId, profiles, inventory, onRefresh, 
                           type="number"
                           className={inputCls}
                           value={moveForm.quantity}
-                          onChange={(e) => setMoveForm((f) => ({ ...f, quantity: Math.max(1, Math.min(item.quantity, Number(e.target.value))) }))}
+                          onChange={(e) => setMoveForm((f) => ({ ...f, quantity: e.target.value }))}
+                          onBlur={(e) => setMoveForm((f) => ({ ...f, quantity: String(Math.max(1, Math.min(item.quantity, parseInt(e.target.value) || 1))) }))}
                           min={1}
                           max={item.quantity}
                         />
