@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, Snowflake, Trash2, ChevronDown, ChevronUp,
-  Loader2, AlertCircle, Edit2, Settings2, Check, X, Search, Copy,
+  Loader2, AlertCircle, Edit2, Settings2, Check, X, Search, Copy, Rows3,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { MEAT_CUTS, getPrimalForCut, getAnimalForCut, ANIMAL_LABELS, type MeatAnimal } from '@/lib/meat-cuts';
 import type { FreezerItem, FreezerTransaction, FreezerLocation } from '@/types';
+import FreezerBulkAdd from '@/components/bulk-add/FreezerBulkAdd';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
@@ -191,6 +192,7 @@ export default function FreezerPage() {
 
   // Add form
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [addForm, setAddForm] = useState<FormState>(DEFAULT_FORM);
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -495,13 +497,22 @@ export default function FreezerPage() {
           <h1 className="text-xl font-bold">Freezer</h1>
           {totalPacks > 0 && <span className="text-sm text-muted-foreground">({totalPacks} packages)</span>}
         </div>
-        <button
-          onClick={() => { setShowAdd(true); setAddForm(DEFAULT_FORM); setAddError(null); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Add Item
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkAdd(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+          >
+            <Rows3 className="h-4 w-4" />
+            Bulk Add
+          </button>
+          <button
+            onClick={() => { setShowAdd(true); setAddForm(DEFAULT_FORM); setAddError(null); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add Item
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -932,6 +943,17 @@ export default function FreezerPage() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* ── Bulk Add ── */}
+      {activeProfile && (
+        <FreezerBulkAdd
+          profile={activeProfile}
+          locations={locations}
+          open={showBulkAdd}
+          onClose={() => setShowBulkAdd(false)}
+          onSuccess={() => { void load(); setShowBulkAdd(false); }}
+        />
+      )}
 
     </div>
   );

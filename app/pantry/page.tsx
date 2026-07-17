@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, ShoppingBasket, Trash2, Edit2, ChevronDown, ChevronUp,
   Loader2, AlertCircle, Search, X, RotateCcw, SlidersHorizontal, TrendingDown,
-  Minus, Calendar, CalendarOff,
+  Minus, Calendar, CalendarOff, Rows3,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import type { PantryItem, PantryTransaction, PantryUsageSetting, PantryDateMode } from '@/types';
+import PantryBulkAdd from '@/components/bulk-add/PantryBulkAdd';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { computeUsagePrediction, formatDays } from '@/lib/pantry-utils';
@@ -716,6 +717,7 @@ export default function PantryPage() {
 
   // Full add form
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [addForm, setAddForm] = useState<PantryFormState>(DEFAULT_FORM);
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -983,13 +985,22 @@ export default function PantryPage() {
           <h1 className="text-xl font-bold">Pantry</h1>
           {totalItems > 0 && <span className="text-sm text-muted-foreground">({totalItems} items)</span>}
         </div>
-        <button
-          onClick={() => { setShowAdd(true); setAddForm(DEFAULT_FORM); setAddError(null); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Add Item
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkAdd(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+          >
+            <Rows3 className="h-4 w-4" />
+            Bulk Add
+          </button>
+          <button
+            onClick={() => { setShowAdd(true); setAddForm(DEFAULT_FORM); setAddError(null); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add Item
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -1257,6 +1268,17 @@ export default function PantryPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Bulk Add ── */}
+      {activeProfile && (
+        <PantryBulkAdd
+          profile={activeProfile}
+          existingItems={items}
+          open={showBulkAdd}
+          onClose={() => setShowBulkAdd(false)}
+          onSuccess={() => { void load(); setShowBulkAdd(false); }}
+        />
+      )}
 
     </div>
   );

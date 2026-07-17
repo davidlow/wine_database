@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useCallback, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, Loader2, MapPin, X } from 'lucide-react';
+import { Plus, Loader2, MapPin, X, Rows3 } from 'lucide-react';
 import Link from 'next/link';
 import { useWineSearch } from '@/hooks/useWineSearch';
 import { useProfile } from '@/hooks/useProfile';
@@ -10,8 +10,9 @@ import WineCard from '@/components/WineCard';
 import WineSearch from '@/components/WineSearch';
 import WineSort from '@/components/WineSort';
 import LocationPicker from '@/components/LocationPicker';
+import WineBulkAdd from '@/components/bulk-add/WineBulkAdd';
 import { cn } from '@/lib/utils';
-import type { Wine, Profile } from '@/types';
+import type { Wine, Profile, Location } from '@/types';
 
 // ── Quick-add modal ────────────────────────────────────────────────────────────
 function QuickAddModal({
@@ -156,6 +157,17 @@ function WinesContent() {
   const router = useRouter();
   const { profiles, activeProfile } = useProfile();
   const [quickAddWine, setQuickAddWine] = useState<Wine | null>(null);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkLocations, setBulkLocations] = useState<Location[]>([]);
+
+  useEffect(() => {
+    if (showBulkAdd && activeProfile) {
+      fetch(`/api/locations?profile_id=${activeProfile.id}`)
+        .then(r => r.ok ? r.json() : [])
+        .then((data: Location[]) => setBulkLocations(data))
+        .catch(() => setBulkLocations([]));
+    }
+  }, [showBulkAdd, activeProfile]);
 
   const profileIds = searchParams.get('profile_ids') ?? undefined;
   const { wines, loading, error, params, updateParam, clearParams, refresh } = useWineSearch({ profile_ids: profileIds });
@@ -183,13 +195,24 @@ function WinesContent() {
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold">Wines</h2>
-        <Link
-          href="/wines/new"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Add Wine
-        </Link>
+        <div className="flex items-center gap-2">
+          {activeProfile && (
+            <button
+              onClick={() => setShowBulkAdd(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+            >
+              <Rows3 className="h-4 w-4" />
+              Bulk Add
+            </button>
+          )}
+          <Link
+            href="/wines/new"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add Wine
+          </Link>
+        </div>
       </div>
 
       {/* Cellar filter chips */}
@@ -277,6 +300,16 @@ function WinesContent() {
           activeProfile={activeProfile}
           onClose={() => setQuickAddWine(null)}
           onSuccess={refresh}
+        />
+      )}
+
+      {showBulkAdd && activeProfile && (
+        <WineBulkAdd
+          profile={activeProfile}
+          locations={bulkLocations}
+          open={showBulkAdd}
+          onClose={() => setShowBulkAdd(false)}
+          onSuccess={() => { refresh(); setShowBulkAdd(false); }}
         />
       )}
     </div>
