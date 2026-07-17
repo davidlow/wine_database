@@ -24,6 +24,7 @@ export function useWineSearch(initialParams: WineSearchParams = {}) {
       setWines(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
+      setWines([]);
     } finally {
       setLoading(false);
     }

@@ -15,6 +15,7 @@ interface ProfileContextType {
   activeProfile: Profile | null;
   setActiveProfile: (profile: Profile) => void;
   loading: boolean;
+  error: string | null;
   refresh: () => Promise<void>;
 }
 
@@ -23,6 +24,7 @@ const ProfileContext = createContext<ProfileContextType>({
   activeProfile: null,
   setActiveProfile: () => {},
   loading: true,
+  error: null,
   refresh: async () => {},
 });
 
@@ -30,11 +32,16 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeProfile, setActiveProfileState] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadProfiles = useCallback(async () => {
     try {
       const res = await fetch('/api/profiles');
-      if (!res.ok) return;
+      if (!res.ok) {
+        setError('Failed to load profiles');
+        return;
+      }
+      setError(null);
       const data: Profile[] = await res.json();
       setProfiles(data);
 
@@ -43,6 +50,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         : null;
       const saved = data.find((p) => p.id === savedId);
       setActiveProfileState(saved ?? data[0] ?? null);
+    } catch {
+      setError('Failed to load profiles');
     } finally {
       setLoading(false);
     }
@@ -58,7 +67,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ProfileContext.Provider value={{ profiles, activeProfile, setActiveProfile, loading, refresh: loadProfiles }}>
+    <ProfileContext.Provider value={{ profiles, activeProfile, setActiveProfile, loading, error, refresh: loadProfiles }}>
       {children}
     </ProfileContext.Provider>
   );
