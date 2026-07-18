@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Camera, Upload, Loader2, CheckCircle, AlertCircle, X,
-  Search, Plus, ChevronDown
+  ArrowLeft, Upload, Loader2, CheckCircle, AlertCircle, X,
+  Search, Plus, ChevronDown, Video
 } from 'lucide-react';
+import ReceiptCapture, { type ReceiptCaptureResult } from '@/components/ReceiptCapture';
 import { useProfile } from '@/hooks/useProfile';
 import LocationPicker from '@/components/LocationPicker';
 import { cn, formatPrice } from '@/lib/utils';
@@ -263,6 +264,7 @@ export default function ReceiptScanPage() {
   const [profileId, setProfileId] = useState('');
   const [location, setLocation] = useState('');
   const [addedCount, setAddedCount] = useState(0);
+  const [showCamera, setShowCamera] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Set default profile
@@ -272,27 +274,16 @@ export default function ReceiptScanPage() {
     }
   }, [activeProfile, profiles, profileId]);
 
-  async function handleFile(file: File) {
-    if (!file.type.startsWith('image/')) {
-      setErrorMsg('Please select an image file.');
-      setPhase('error');
-      return;
-    }
+  async function handleScan(imageBase64: string, mimeType: string) {
     setPhase('analyzing');
     setErrorMsg('');
+    setShowCamera(false);
 
     try {
-      const imageBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
       const res = await fetch('/api/scan-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, mimeType: file.type, docType }),
+        body: JSON.stringify({ imageBase64, mimeType, docType }),
       });
 
       const data = await res.json();
@@ -339,6 +330,25 @@ export default function ReceiptScanPage() {
       setErrorMsg(err instanceof Error ? err.message : 'Scan failed');
       setPhase('error');
     }
+  }
+
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('Please select an image file.');
+      setPhase('error');
+      return;
+    }
+    const imageBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    await handleScan(imageBase64, file.type);
+  }
+
+  function handleCameraCapture(result: ReceiptCaptureResult) {
+    void handleScan(result.imageBase64, result.mimeType);
   }
 
   function updateItem(key: string, patch: Partial<ReviewItem>) {
@@ -407,7 +417,7 @@ export default function ReceiptScanPage() {
       </div>
 
       {/* Idle: upload UI */}
-      {phase === 'idle' && (
+      {phase === 'idle' && !showCamera && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Upload a photo of a packing slip from a wine club or winery, or a purchase receipt, and Gemini will extract the wines automatically.
@@ -437,18 +447,27 @@ export default function ReceiptScanPage() {
               : 'Best for store receipts and invoices. Non-wine items will be filtered out automatically.'}
           </p>
 
+          {/* Use Camera (live) */}
+          <button
+            onClick={() => setShowCamera(true)}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 text-sm font-medium transition-colors"
+          >
+            <Video className="h-4 w-4" />
+            Use Camera
+          </button>
+
           {/* Drop zone */}
           <label
             htmlFor="receipt-upload"
-            className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-input hover:border-primary/50 bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer py-12 px-6"
+            className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-input hover:border-primary/50 bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer py-10 px-6"
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
               e.preventDefault();
               const file = e.dataTransfer.files[0];
-              if (file) handleFile(file);
+              if (file) void handleFile(file);
             }}
           >
-            <Upload className="h-8 w-8 text-muted-foreground" />
+            <Upload className="h-7 w-7 text-muted-foreground" />
             <div className="text-center">
               <p className="text-sm font-medium">Drop image here or click to browse</p>
               <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WEBP — max 10 MB</p>
@@ -460,22 +479,34 @@ export default function ReceiptScanPage() {
             type="file"
             accept="image/*"
             className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) void handleFile(f); }}
           />
+        </div>
+      )}
 
-          {/* Mobile camera button */}
-          <button
-            onClick={() => {
-              if (fileRef.current) {
-                fileRef.current.setAttribute('capture', 'environment');
-                fileRef.current.click();
-              }
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-md border text-sm hover:bg-accent transition-colors"
-          >
-            <Camera className="h-4 w-4" />
-            Take Photo
-          </button>
+      {/* Idle: live camera */}
+      {phase === 'idle' && showCamera && (
+        <div className="space-y-3">
+          <div className="flex gap-2 items-center">
+            {(['packing_slip', 'receipt'] as const).map(type => (
+              <button
+                key={type}
+                onClick={() => setDocType(type)}
+                className={cn(
+                  'flex-1 py-1.5 text-sm font-medium rounded-md border transition-colors',
+                  docType === type
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background hover:bg-accent border-input text-muted-foreground'
+                )}
+              >
+                {type === 'packing_slip' ? 'Packing Slip' : 'Receipt / Invoice'}
+              </button>
+            ))}
+          </div>
+          <ReceiptCapture
+            onCapture={handleCameraCapture}
+            onCancel={() => setShowCamera(false)}
+          />
         </div>
       )}
 
