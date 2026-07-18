@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Loader2, X } from 'lucide-react';
+import { Camera, Loader2, X, RotateCw } from 'lucide-react';
+import { useCameraRotation } from '@/hooks/useCameraRotation';
 
 async function resizeToWebP(source: HTMLCanvasElement, maxW: number, maxH: number, quality: number): Promise<string> {
   const ratio = Math.min(maxW / source.width, maxH / source.height);
@@ -31,6 +32,7 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const { rotation, rotateNext, videoStyle } = useCameraRotation();
 
   useEffect(() => {
     let mounted = true;
@@ -65,46 +67,52 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
   const capture = async () => {
     const video = videoRef.current;
-    const guide = guideRef.current;
-    if (!video || !guide || !ready || processing) return;
+    if (!video || !ready || processing) return;
     setProcessing(true);
 
-    // Measure where the guide box sits on screen vs. the video container
-    const containerRect = video.getBoundingClientRect();
-    const guideRect = guide.getBoundingClientRect();
-
-    // Native video dimensions
     const nativeW = video.videoWidth;
     const nativeH = video.videoHeight;
+    let raw: HTMLCanvasElement;
 
-    // With object-cover the video fills the container — scale = max of both axes
-    const displayW = containerRect.width;
-    const displayH = containerRect.height;
-    const scale = Math.max(displayW / nativeW, displayH / nativeH);
+    if (rotation === 0) {
+      // Use guide-box crop for precise label extraction
+      const guide = guideRef.current;
+      if (!guide) { setProcessing(false); return; }
 
-    // Top-left of the rendered video relative to the container (may be negative = cropped)
-    const videoOffsetX = (displayW - nativeW * scale) / 2;
-    const videoOffsetY = (displayH - nativeH * scale) / 2;
+      const containerRect = video.getBoundingClientRect();
+      const guideRect = guide.getBoundingClientRect();
+      const displayW = containerRect.width;
+      const displayH = containerRect.height;
+      const scale = Math.max(displayW / nativeW, displayH / nativeH);
+      const videoOffsetX = (displayW - nativeW * scale) / 2;
+      const videoOffsetY = (displayH - nativeH * scale) / 2;
+      const guideLeft = guideRect.left - containerRect.left;
+      const guideTop = guideRect.top - containerRect.top;
+      const guideW = guideRect.width;
+      const guideH = guideRect.height;
+      const srcX = Math.max(0, (guideLeft - videoOffsetX) / scale);
+      const srcY = Math.max(0, (guideTop - videoOffsetY) / scale);
+      const srcW = Math.min(nativeW - srcX, guideW / scale);
+      const srcH = Math.min(nativeH - srcY, guideH / scale);
 
-    // Guide box position relative to the video container, in display pixels
-    const guideLeft = guideRect.left - containerRect.left;
-    const guideTop = guideRect.top - containerRect.top;
-    const guideW = guideRect.width;
-    const guideH = guideRect.height;
-
-    // Map guide box to native video pixel coordinates
-    const srcX = Math.max(0, (guideLeft - videoOffsetX) / scale);
-    const srcY = Math.max(0, (guideTop - videoOffsetY) / scale);
-    const srcW = Math.min(nativeW - srcX, guideW / scale);
-    const srcH = Math.min(nativeH - srcY, guideH / scale);
-
-    // Draw only the guide region onto a canvas
-    const raw = document.createElement('canvas');
-    raw.width = Math.round(srcW);
-    raw.height = Math.round(srcH);
-    const ctx = raw.getContext('2d');
-    if (!ctx) { setProcessing(false); return; }
-    ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
+      raw = document.createElement('canvas');
+      raw.width = Math.round(srcW);
+      raw.height = Math.round(srcH);
+      const ctx = raw.getContext('2d');
+      if (!ctx) { setProcessing(false); return; }
+      ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
+    } else {
+      // Rotate the full frame so Gemini receives a correctly-oriented image
+      const swap = rotation === 90 || rotation === 270;
+      raw = document.createElement('canvas');
+      raw.width = swap ? nativeH : nativeW;
+      raw.height = swap ? nativeW : nativeH;
+      const ctx = raw.getContext('2d');
+      if (!ctx) { setProcessing(false); return; }
+      ctx.translate(raw.width / 2, raw.height / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.drawImage(video, -nativeW / 2, -nativeH / 2, nativeW, nativeH);
+    }
 
     try {
       const [gemini, thumbnail] = await Promise.all([
@@ -120,7 +128,25 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
   return (
     <div className="space-y-3">
       <div className="relative rounded-lg overflow-hidden bg-black aspect-video w-full max-w-md mx-auto">
-        <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+        <video
+          ref={videoRef}
+          className="w-full h-full object-cover"
+          style={videoStyle}
+          autoPlay
+          muted
+          playsInline
+        />
+
+        {/* Rotate button */}
+        {ready && (
+          <button
+            onClick={rotateNext}
+            className="absolute top-2 right-2 z-10 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70 transition-colors"
+            title={`Rotate camera (currently ${rotation}°)`}
+          >
+            <RotateCw className="h-4 w-4" />
+          </button>
+        )}
 
         {!ready && !error && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/70 text-white">
@@ -137,18 +163,14 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
         {ready && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            {/* Guide frame — slightly expanded vs previous; ref lets capture() measure exact position */}
             <div ref={guideRef} className="relative w-1/2 h-[88%]">
-              {/* TOP label */}
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-center">
                 <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">
                   TOP
                 </span>
                 <div className="w-px h-2 bg-white/60 mx-auto mt-0.5" />
               </div>
-              {/* Guide box */}
               <div className="w-full h-full border-2 border-white/80 rounded-md" />
-              {/* BOTTOM label */}
               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-center">
                 <div className="w-px h-2 bg-white/60 mx-auto mb-0.5" />
                 <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">
@@ -161,7 +183,9 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Hold label upright · align within the frame · TOP and BTM mark the correct orientation
+        {rotation === 0
+          ? 'Hold label upright · align within the frame · TOP and BTM mark the correct orientation'
+          : `Camera rotated ${rotation}° · tap the rotate button to adjust if the preview looks wrong`}
       </p>
 
       <div className="flex justify-center gap-3">

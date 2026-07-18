@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Camera, CameraOff, Loader2 } from 'lucide-react';
+import { Camera, CameraOff, Loader2, RotateCw } from 'lucide-react';
 import { useBarcode } from '@/hooks/useBarcode';
+import { useCameraRotation } from '@/hooks/useCameraRotation';
 
 interface Props {
   onDetected: (barcode: string) => void;
@@ -11,6 +12,7 @@ interface Props {
 
 export default function BarcodeScanner({ onDetected, autoStart = false }: Props) {
   const { videoRef, status, error, start, stop } = useBarcode(onDetected);
+  const { rotation, rotateNext, videoStyle } = useCameraRotation();
 
   useEffect(() => {
     if (autoStart) start();
@@ -18,16 +20,31 @@ export default function BarcodeScanner({ onDetected, autoStart = false }: Props)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const isActive = status === 'scanning' || status === 'starting';
+
   return (
     <div className="space-y-3">
       <div className="relative rounded-lg overflow-hidden bg-black aspect-video w-full max-w-md mx-auto">
         <video
           ref={videoRef}
           className="w-full h-full object-cover"
+          style={videoStyle}
           autoPlay
           muted
           playsInline
         />
+
+        {/* Rotate button — visible whenever camera is active */}
+        {isActive && (
+          <button
+            onClick={rotateNext}
+            className="absolute top-2 right-2 z-10 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70 transition-colors"
+            title={`Rotate camera (currently ${rotation}°)`}
+          >
+            <RotateCw className="h-4 w-4" />
+          </button>
+        )}
+
         {status !== 'scanning' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 text-white">
             {status === 'starting' && (

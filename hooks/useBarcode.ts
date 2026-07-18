@@ -27,8 +27,15 @@ export function useBarcode(onDetected: (barcode: string) => void) {
     lastDetectionRef.current = null;
 
     try {
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
-      const reader = new BrowserMultiFormatReader();
+      const { BrowserMultiFormatReader, BarcodeFormat } = await import('@zxing/browser');
+      const { DecodeHintType } = await import('@zxing/library');
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.EAN_8,
+      ]);
+      const reader = new BrowserMultiFormatReader(hints);
 
       const devices = await BrowserMultiFormatReader.listVideoInputDevices();
       const deviceId = devices.find((d) =>
