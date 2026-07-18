@@ -9,7 +9,7 @@ import WineForm from '@/components/WineForm';
 import type { WineLookupResult } from '@/lib/wine-lookup/types';
 import type { Wine } from '@/types';
 import Link from 'next/link';
-import { PackagePlus } from 'lucide-react';
+import { PackagePlus, PackageSearch, MapPin, ScanSearch } from 'lucide-react';
 
 type ScanState =
   | 'idle'
@@ -168,6 +168,27 @@ export default function ScannerPage() {
             >
               <PackagePlus className="h-3.5 w-3.5" />
               Bulk Scan
+            </Link>
+            <Link
+              href="/scanner/rack"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors"
+            >
+              <PackageSearch className="h-3.5 w-3.5" />
+              Rack Scan
+            </Link>
+            <Link
+              href="/scanner/locate"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors"
+            >
+              <MapPin className="h-3.5 w-3.5" />
+              Locate
+            </Link>
+            <Link
+              href="/finder"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium hover:bg-accent transition-colors"
+            >
+              <ScanSearch className="h-3.5 w-3.5" />
+              Finder
             </Link>
           </div>
         )}
