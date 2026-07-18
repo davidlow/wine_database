@@ -149,7 +149,7 @@ export default function PantryBulkAdd({
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-[92vw] w-[92vw] max-h-[90vh] flex flex-col gap-0 p-0">
+      <DialogContent className="max-w-[98vw] w-[98vw] sm:max-w-[98vw] sm:w-[98vw] max-h-[96vh] sm:max-h-[96vh] flex flex-col gap-0 p-0">
 
         <DialogHeader className="px-5 py-3 border-b shrink-0">
           <div className="flex items-center justify-between gap-3">

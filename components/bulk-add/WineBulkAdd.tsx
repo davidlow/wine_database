@@ -283,7 +283,7 @@ export default function WineBulkAdd({
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-[96vw] w-[96vw] max-h-[92vh] flex flex-col gap-0 p-0">
+      <DialogContent className="max-w-[98vw] w-[98vw] sm:max-w-[98vw] sm:w-[98vw] max-h-[96vh] sm:max-h-[96vh] flex flex-col gap-0 p-0">
 
         {/* Header */}
         <DialogHeader className="px-5 py-3 border-b shrink-0">
