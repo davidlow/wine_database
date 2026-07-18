@@ -100,6 +100,64 @@ function extractJson(text: string): WineData {
   }
 }
 
+function extractJsonArray(text: string): Array<WineData & { id?: string }> {
+  const clean = text.trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+  try {
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed)) return parsed as Array<WineData & { id?: string }>;
+    // Gemini sometimes returns object with array inside
+    const firstArray = Object.values(parsed as object).find(v => Array.isArray(v));
+    if (firstArray) return firstArray as Array<WineData & { id?: string }>;
+  } catch { /* fall through to regex */ }
+  const match = clean.match(/\[[\s\S]*\]/);
+  if (match) return JSON.parse(match[0]) as Array<WineData & { id?: string }>;
+  throw new Error('No valid JSON array in Gemini batch response');
+}
+
+function batchPrompt(n: number): string {
+  return `You are a wine expert. I have shown you ${n} wine bottle label images above, each labeled with a Wine number and id.
+
+Analyze each label and extract structured wine information using Google Search to fill in missing details.
+
+Return ONLY a JSON array with exactly ${n} objects — no markdown, no code fences, no extra text.
+Each object must include the "id" exactly as provided, plus any fields you can determine:
+
+[
+  {
+    "id": "the exact id string I gave you for Wine 1",
+    "name": "wine product name (required if identifiable)",
+    "producer": "winery or producer name",
+    "vintage_year": 2019,
+    "variety": "grape variety",
+    "wine_type": "one of: red, white, rosé, sparkling, dessert, fortified, other",
+    "region": "growing region",
+    "appellation": "specific appellation",
+    "country": "country of origin",
+    "alcohol_content": 14.5,
+    "average_price": 24.99,
+    "drink_from_year": ${CURRENT_YEAR},
+    "drink_by_year": ${CURRENT_YEAR + 10},
+    "description": "one short sentence",
+    "acidity": 3,
+    "tannin": 4,
+    "alcohol": 3,
+    "sweetness": 1,
+    "body": 4,
+    "fruit_profile": "dark cherry, blackcurrant",
+    "food_pairings": ["grilled steak", "lamb"],
+    "confidence": 0.9
+  },
+  ...one object per wine, in order...
+]
+
+Rules:
+- Include "id" in every object (copy exactly from my label)
+- "name" is required when identifiable; if you truly cannot read the label set "name": null
+- Structural scores 0–5 (0=least, 5=most)
+- Do not fabricate uncertain fields — omit them
+- Return exactly ${n} array elements, one per wine image`;
+}
+
 export async function scanLabel(imageBase64: string, barcode?: string): Promise<WineLookupResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
@@ -176,4 +234,79 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
     source: 'label-scan',
     confidence: data.confidence,
   };
+}
+
+export interface BatchLabelResult extends Partial<WineLookupResult> {
+  id: string;
+  found: boolean;
+}
+
+export async function scanLabelBatch(
+  items: Array<{ id: string; imageBase64: string; barcode?: string }>
+): Promise<BatchLabelResult[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
+
+  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  const useGrounding = process.env.GEMINI_GROUNDING !== 'false';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  // Interleave: image, label text, image, label text, ..., final prompt
+  const parts: GeminiPart[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    parts.push({ inline_data: { mime_type: 'image/jpeg', data: item.imageBase64 } });
+    const barcodeNote = item.barcode ? `, barcode: ${item.barcode}` : '';
+    parts.push({ text: `Wine ${i + 1} (id: "${item.id}"${barcodeNote})` });
+  }
+  parts.push({ text: batchPrompt(items.length) });
+
+  const body: GeminiRequest = { contents: [{ parts }] };
+  if (useGrounding) body.tools = [{ google_search: {} }];
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const json: GeminiResponse = await res.json();
+
+  if (!res.ok || json.error) {
+    throw new Error(json.error?.message ?? `Gemini API error ${res.status}`);
+  }
+
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  if (!text) throw new Error('Empty batch response from Gemini');
+
+  const parsed = extractJsonArray(text);
+
+  return parsed.map(data => ({
+    id: (data as { id?: string }).id ?? '',
+    found: !!(data.name),
+    name: data.name,
+    producer: data.producer,
+    vintage_year: data.vintage_year,
+    variety: data.variety,
+    wine_type: data.wine_type as WineType | undefined,
+    region: data.region,
+    appellation: data.appellation,
+    country: data.country,
+    alcohol_content: data.alcohol_content,
+    average_price: data.average_price,
+    drink_from_year: data.drink_from_year,
+    drink_by_year: data.drink_by_year,
+    description: data.description,
+    acidity: clampScore(data.acidity),
+    tannin: clampScore(data.tannin),
+    alcohol: clampScore(data.alcohol),
+    sweetness: clampScore(data.sweetness),
+    body: clampScore(data.body),
+    fruit_profile: data.fruit_profile,
+    food_pairings: Array.isArray(data.food_pairings)
+      ? data.food_pairings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+      : undefined,
+    confidence: data.confidence,
+    source: 'label-scan' as const,
+  }));
 }
