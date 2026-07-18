@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS bottle_transactions (
 -- Named storage locations with optional capacity tracking.
 -- location TEXT in cellar_inventory matches locations.name for the same profile_id.
 -- Bottles with location='' are "unlocated" (received but not yet placed).
+-- location_type: 'standard' (default), 'aging' (excluded from recommendations/defrag), 'daily' (diversity scoring)
+-- position_x/y: physical map coordinates for walk-order optimization in defragment
 CREATE TABLE IF NOT EXISTS locations (
   id TEXT PRIMARY KEY,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -72,6 +74,9 @@ CREATE TABLE IF NOT EXISTS locations (
   group_name TEXT,
   max_capacity INTEGER,
   notes TEXT,
+  location_type TEXT DEFAULT 'standard',
+  position_x REAL,
+  position_y REAL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(profile_id, name)

@@ -59,6 +59,9 @@ function openDb(resolvedPath: string): Database.Database {
   try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_profile TEXT'); } catch {}
   try { conn.exec('ALTER TABLE freezer_transactions ADD COLUMN weight_lbs REAL'); } catch {}
   try { conn.exec("ALTER TABLE pantry_usage_settings ADD COLUMN date_mode TEXT DEFAULT 'full'"); } catch {}
+  try { conn.exec("ALTER TABLE locations ADD COLUMN location_type TEXT DEFAULT 'standard'"); } catch {}
+  try { conn.exec('ALTER TABLE locations ADD COLUMN position_x REAL'); } catch {}
+  try { conn.exec('ALTER TABLE locations ADD COLUMN position_y REAL'); } catch {}
   return conn;
 }
 
@@ -84,7 +87,7 @@ function nullify(obj: Record<string, unknown>, keys: readonly string[]): Record<
 const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'label_image', 'acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'fruit_profile', 'created_at', 'updated_at'] as const;
 const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'group_name', 'created_at', 'updated_at'] as const;
 const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
-const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'created_at', 'updated_at'] as const;
+const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'location_type', 'position_x', 'position_y', 'created_at', 'updated_at'] as const;
 
 export function closeSqliteDb(): void {
   if (memoryDb) { memoryDb.close(); memoryDb = null; }
@@ -498,7 +501,8 @@ export const sqliteAdapter: DbAdapter = {
 
   async getLocations(profileId: string): Promise<Location[]> {
     const rows = getDb().prepare(`
-      SELECT l.*,
+      SELECT l.id, l.profile_id, l.name, l.group_name, l.max_capacity, l.notes,
+             l.location_type, l.position_x, l.position_y, l.created_at, l.updated_at,
              COALESCE(SUM(CASE WHEN ci.quantity > 0 THEN ci.quantity ELSE 0 END), 0) AS current_quantity
       FROM locations l
       LEFT JOIN cellar_inventory ci
@@ -510,6 +514,7 @@ export const sqliteAdapter: DbAdapter = {
 
     return rows.map(r => ({
       ...r,
+      location_type: (r.location_type as import('@/types').LocationType | undefined) ?? 'standard',
       available_capacity: r.max_capacity != null ? Math.max(0, r.max_capacity - r.current_quantity) : undefined,
     }));
   },
@@ -517,10 +522,10 @@ export const sqliteAdapter: DbAdapter = {
   async createLocation(data): Promise<Location> {
     const d = getDb();
     const now = new Date().toISOString();
-    const location: Location = { ...data, id: generateId(), created_at: now, updated_at: now };
+    const location: Location = { location_type: 'standard', ...data, id: generateId(), created_at: now, updated_at: now };
     d.prepare(`
-      INSERT INTO locations (id, profile_id, name, group_name, max_capacity, notes, created_at, updated_at)
-      VALUES (@id, @profile_id, @name, @group_name, @max_capacity, @notes, @created_at, @updated_at)
+      INSERT INTO locations (id, profile_id, name, group_name, max_capacity, notes, location_type, position_x, position_y, created_at, updated_at)
+      VALUES (@id, @profile_id, @name, @group_name, @max_capacity, @notes, @location_type, @position_x, @position_y, @created_at, @updated_at)
     `).run(nullify(location as unknown as Record<string, unknown>, LOCATION_COLS));
     return location;
   },
@@ -531,7 +536,8 @@ export const sqliteAdapter: DbAdapter = {
     if (!existing) throw new Error(`Location ${id} not found`);
     const updated: Location = { ...existing, ...data, id, updated_at: new Date().toISOString() };
     d.prepare(`
-      UPDATE locations SET name=@name, group_name=@group_name, max_capacity=@max_capacity, notes=@notes, updated_at=@updated_at
+      UPDATE locations SET name=@name, group_name=@group_name, max_capacity=@max_capacity, notes=@notes,
+        location_type=@location_type, position_x=@position_x, position_y=@position_y, updated_at=@updated_at
       WHERE id=@id
     `).run(nullify(updated as unknown as Record<string, unknown>, LOCATION_COLS));
     return updated;

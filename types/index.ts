@@ -73,6 +73,8 @@ export interface CellarShare {
   created_at: string;
 }
 
+export type LocationType = 'standard' | 'aging' | 'daily';
+
 // A named physical location (rack, fridge, shelf) with optional capacity.
 // Rows in cellar_inventory reference these by name (within the same profile).
 // Bottles with location='' are "unlocated" — received but not yet placed.
@@ -83,6 +85,12 @@ export interface Location {
   group_name?: string;
   max_capacity?: number;
   notes?: string;
+  // 'standard' = normal clustering; 'aging' = excluded from recommendations/defrag;
+  // 'daily' = diversity-first scoring
+  location_type?: LocationType;
+  // Grid position for walk-order optimization in defragment (null = unpositioned)
+  position_x?: number | null;
+  position_y?: number | null;
   created_at: string;
   updated_at: string;
   // Computed fields (populated by getLocations join)
@@ -347,7 +355,7 @@ export interface DbAdapter {
   // Locations
   getLocations(profileId: string): Promise<Location[]>;
   createLocation(data: Omit<Location, 'id' | 'created_at' | 'updated_at' | 'current_quantity' | 'available_capacity'>): Promise<Location>;
-  updateLocation(id: string, data: Partial<Pick<Location, 'name' | 'group_name' | 'max_capacity' | 'notes'>>): Promise<Location>;
+  updateLocation(id: string, data: Partial<Pick<Location, 'name' | 'group_name' | 'max_capacity' | 'notes' | 'location_type' | 'position_x' | 'position_y'>>): Promise<Location>;
   deleteLocation(id: string): Promise<void>;
 
   // Cellar inventory

@@ -35,7 +35,7 @@ function CapacityBar({ used, max }: { used: number; max: number }) {
 interface EditFormProps {
   loc: DisplayLocation;
   existingGroups: string[];
-  onSave: (data: { name: string; group_name: string; max_capacity: number | undefined }) => Promise<void>;
+  onSave: (data: { name: string; group_name: string; max_capacity: number | undefined; location_type: string }) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -43,6 +43,7 @@ function LocationEditForm({ loc, existingGroups, onSave, onCancel }: EditFormPro
   const [name, setName] = useState(loc.name);
   const [groupName, setGroupName] = useState(loc.group_name ?? '');
   const [maxCap, setMaxCap] = useState(loc.max_capacity != null ? String(loc.max_capacity) : '');
+  const [locType, setLocType] = useState<string>(loc.location_type ?? 'standard');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -52,6 +53,7 @@ function LocationEditForm({ loc, existingGroups, onSave, onCancel }: EditFormPro
       name: name.trim(),
       group_name: groupName.trim(),
       max_capacity: maxCap ? parseInt(maxCap, 10) : undefined,
+      location_type: locType,
     });
     setSaving(false);
   };
@@ -93,6 +95,29 @@ function LocationEditForm({ loc, existingGroups, onSave, onCancel }: EditFormPro
             placeholder="Unlimited"
             min={1}
           />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs font-medium text-muted-foreground">Type</label>
+          <div className="mt-1 flex gap-1">
+            {(['standard', 'aging', 'daily'] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setLocType(t)}
+                className={cn(
+                  'flex-1 py-1 rounded-md text-xs font-medium border transition-colors capitalize',
+                  locType === t ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-accent text-muted-foreground'
+                )}
+              >
+                {t === 'daily' ? 'Daily Drinkers' : t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {locType === 'aging' ? 'Excluded from recommendations and defragment.' :
+             locType === 'daily' ? 'Diversity-first scoring; drink-soon wines preferred.' :
+             'Normal clustering by variety, region, and producer.'}
+          </p>
         </div>
       </div>
       <div className="flex gap-2">
@@ -540,13 +565,13 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const handleUpdateLocation = async (loc: DisplayLocation, data: { name: string; group_name: string; max_capacity: number | undefined }) => {
+  const handleUpdateLocation = async (loc: DisplayLocation, data: { name: string; group_name: string; max_capacity: number | undefined; location_type: string }) => {
     setLocError(null);
     try {
       const res = await fetch(`/api/locations/${loc.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: data.name, group_name: data.group_name || null, max_capacity: data.max_capacity ?? null, notes: loc.notes }),
+        body: JSON.stringify({ name: data.name, group_name: data.group_name || null, max_capacity: data.max_capacity ?? null, notes: loc.notes, location_type: data.location_type }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed');
       setEditingLocId(null);

@@ -24,7 +24,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(inventory);
     }
 
-    const inventory = await db.getCellarInventory(profileId, userId);
+    let inventory = await db.getCellarInventory(profileId, userId);
+
+    // Optional filters applied in-memory (avoids DbAdapter interface change)
+    const locationParam = searchParams.get('location');
+    if (locationParam !== null) {
+      inventory = inventory.filter(item => item.location === locationParam);
+    }
+
+    const q = searchParams.get('q')?.trim().toLowerCase();
+    if (q) {
+      inventory = inventory.filter(item =>
+        item.wine?.name?.toLowerCase().includes(q) ||
+        item.wine?.producer?.toLowerCase().includes(q)
+      );
+    }
+
+    const wineType = searchParams.get('wine_type');
+    if (wineType) {
+      inventory = inventory.filter(item => item.wine?.wine_type === wineType);
+    }
+
+    const sortParam = searchParams.get('sort');
+    if (sortParam === 'date') {
+      inventory = inventory.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    } else if (sortParam === 'drink') {
+      inventory = inventory.sort((a, b) =>
+        (a.wine?.drink_by_year ?? 9999) - (b.wine?.drink_by_year ?? 9999)
+      );
+    }
+
     return NextResponse.json(inventory);
   } catch (err) {
     console.error('[GET /api/cellar]', err);
