@@ -7,12 +7,13 @@ interface Props {
   field: 'variety' | 'country' | 'region' | 'producer' | 'appellation';
   value: string;
   onChange: (v: string) => void;
+  onCommit?: (v: string) => void;
   placeholder?: string;
   className?: string;
   inputClassName?: string;
 }
 
-export default function SearchSuggest({ field, value, onChange, placeholder, className, inputClassName }: Props) {
+export default function SearchSuggest({ field, value, onChange, onCommit, placeholder, className, inputClassName }: Props) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
@@ -55,6 +56,7 @@ export default function SearchSuggest({ field, value, onChange, placeholder, cla
 
   const selectSuggestion = (s: string) => {
     onChange(s);
+    onCommit?.(s);
     setOpen(false);
     setActiveIdx(-1);
     inputRef.current?.blur();
@@ -71,6 +73,9 @@ export default function SearchSuggest({ field, value, onChange, placeholder, cla
     } else if (e.key === 'Enter' && activeIdx >= 0) {
       e.preventDefault();
       selectSuggestion(suggestions[activeIdx]);
+    } else if (e.key === 'Enter' && activeIdx === -1 && value.trim()) {
+      e.preventDefault();
+      onCommit?.(value.trim());
     } else if (e.key === 'Escape') {
       setOpen(false);
       setActiveIdx(-1);
