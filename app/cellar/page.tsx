@@ -231,32 +231,42 @@ export default function CellarPage() {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <nav className="px-2 py-2 space-y-0.5">
-            {sidebarItems.map(({ loc, count, isVirtual }) => {
-              const active = selectedLoc?.id === loc.id;
-              const badge = loc.location_type ? LOC_TYPE_BADGE[loc.location_type] : undefined;
-              return (
-                <button
-                  key={loc.id}
-                  onClick={() => handleSelectLoc(loc)}
-                  className={cn(
-                    'w-full text-left px-2.5 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-1',
-                    active
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  )}
-                >
-                  <span className="truncate flex-1">
-                    {isVirtual ? 'Unlocated' : loc.name}
-                  </span>
-                  <span className={cn('text-xs shrink-0', active ? 'opacity-80' : 'opacity-60')}>
-                    {count}
-                  </span>
-                </button>
-              );
-              void badge; // badge shown only in main panel for now
-            })}
-          </nav>
+          <>
+            <nav className="px-2 py-2 space-y-0.5">
+              {sidebarItems.map(({ loc, count, isVirtual }) => {
+                const active = selectedLoc?.id === loc.id;
+                const badge = loc.location_type ? LOC_TYPE_BADGE[loc.location_type] : undefined;
+                return (
+                  <button
+                    key={loc.id}
+                    onClick={() => handleSelectLoc(loc)}
+                    className={cn(
+                      'w-full text-left px-2.5 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-1',
+                      active
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    )}
+                  >
+                    <span className="truncate flex-1">
+                      {isVirtual ? 'Unlocated' : loc.name}
+                    </span>
+                    <span className={cn('text-xs shrink-0', active ? 'opacity-80' : 'opacity-60')}>
+                      {count}
+                    </span>
+                  </button>
+                );
+                void badge; // badge shown only in main panel for now
+              })}
+            </nav>
+            <div className="px-3 pb-3 pt-1 border-t">
+              <a
+                href="/cellar/hierarchy"
+                className="block text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                Proximity Groups →
+              </a>
+            </div>
+          </>
         )}
       </aside>
 

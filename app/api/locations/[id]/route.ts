@@ -82,6 +82,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (body.location_type !== undefined) patch.location_type = body.location_type as LocationType;
     if (body.position_x !== undefined) patch.position_x = body.position_x != null ? Number(body.position_x) : null;
     if (body.position_y !== undefined) patch.position_y = body.position_y != null ? Number(body.position_y) : null;
+    if (body.hierarchy_group_id !== undefined) patch.hierarchy_group_id = body.hierarchy_group_id ?? null;
 
     const location = await db.updateLocation(id, patch);
     return NextResponse.json(location);

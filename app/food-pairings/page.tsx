@@ -195,11 +195,11 @@ export default function FoodPairingsPage() {
                 <div className="h-px flex-1 bg-border" />
               </div>
               {/* Centroid scores mini-bar */}
-              <div className="flex gap-3 text-[10px] text-muted-foreground">
-                {(['Acid', 'Tannin', 'Alc', 'Sweet', 'Body'] as const).map((label, i) => (
+              <div className="flex gap-2 text-[10px] text-muted-foreground flex-wrap">
+                {(['Acid', 'Tannin', 'Alc', 'Sweet', 'Body', 'Mineral', 'Oak', 'Fruit'] as const).map((label, i) => (
                   <div key={label} className="flex flex-col items-center gap-0.5 min-w-0">
                     <span>{label}</span>
-                    <div className="w-8 h-1 bg-muted rounded-full overflow-hidden">
+                    <div className="w-7 h-1 bg-muted rounded-full overflow-hidden">
                       <div className="h-full bg-primary/60 rounded-full" style={{ width: `${(group.centroid[i] / 5) * 100}%` }} />
                     </div>
                     <span className="font-medium">{group.centroid[i].toFixed(1)}</span>
@@ -235,7 +235,7 @@ export default function FoodPairingsPage() {
                       </div>
                       <div className="shrink-0 text-right text-xs text-muted-foreground">
                         <span className="text-[10px]">match</span>
-                        <p className="font-semibold text-sm">{(Math.max(0, 1 - wine.distance / 8.66) * 100).toFixed(0)}%</p>
+                        <p className="font-semibold text-sm">{(Math.max(0, 1 - wine.distance / 14.14) * 100).toFixed(0)}%</p>
                       </div>
                     </div>
                   </Link>

@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS wines (
   sweetness REAL,
   body REAL,
   fruit_profile TEXT,
+  pairing_weight TEXT,
+  minerality REAL,
+  oak_influence REAL,
+  fruit_intensity REAL,
+  pairing_rationale TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -66,7 +71,7 @@ CREATE TABLE IF NOT EXISTS bottle_transactions (
 -- location TEXT in cellar_inventory matches locations.name for the same profile_id.
 -- Bottles with location='' are "unlocated" (received but not yet placed).
 -- location_type: 'standard' (default), 'aging' (excluded from recommendations/defrag), 'daily' (diversity scoring)
--- position_x/y: physical map coordinates for walk-order optimization in defragment
+-- hierarchy_group_id: proximity group for walk-order optimization (replaces position_x/y)
 CREATE TABLE IF NOT EXISTS locations (
   id TEXT PRIMARY KEY,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -77,10 +82,26 @@ CREATE TABLE IF NOT EXISTS locations (
   location_type TEXT DEFAULT 'standard',
   position_x REAL,
   position_y REAL,
+  hierarchy_group_id TEXT REFERENCES location_groups(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(profile_id, name)
 );
+
+-- Hierarchical proximity groups for walk-order optimization.
+-- Locations in the same group are treated as close; proximity degrades by LCA depth.
+CREATE TABLE IF NOT EXISTS location_groups (
+  id         TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  parent_id  TEXT REFERENCES location_groups(id) ON DELETE SET NULL,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_groups_profile ON location_groups(profile_id);
+CREATE INDEX IF NOT EXISTS idx_location_groups_parent ON location_groups(parent_id);
 
 -- Timestamped tasting notes per wine.
 CREATE TABLE IF NOT EXISTS wine_notes (
@@ -104,6 +125,18 @@ CREATE TABLE IF NOT EXISTS wine_food_pairings (
 
 CREATE INDEX IF NOT EXISTS idx_wfp_wine_id ON wine_food_pairings(wine_id);
 CREATE INDEX IF NOT EXISTS idx_wfp_food ON wine_food_pairings(food);
+
+-- Per-wine cuisine occasion tags (Gemini or manual) — 15-tag controlled vocabulary
+CREATE TABLE IF NOT EXISTS wine_cuisine_tags (
+  id         TEXT PRIMARY KEY,
+  wine_id    TEXT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+  tag        TEXT NOT NULL,
+  source     TEXT DEFAULT 'manual',
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(wine_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_wct_wine_id ON wine_cuisine_tags(wine_id);
+CREATE INDEX IF NOT EXISTS idx_wct_tag    ON wine_cuisine_tags(tag);
 CREATE INDEX IF NOT EXISTS idx_wines_barcode ON wines(barcode);
 CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(name);
 CREATE INDEX IF NOT EXISTS idx_cellar_wine_id ON cellar_inventory(wine_id);

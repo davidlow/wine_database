@@ -7,6 +7,18 @@ export type WineType =
   | 'fortified'
   | 'other';
 
+// Drinking-weight classification used for cellar organization heuristics.
+// Populated by Gemini during label scan; falls back to structural vector or region+variety lookup.
+export type PairingWeight = 'delicate' | 'light' | 'medium' | 'full' | 'robust';
+
+// Food/occasion tags from a 15-item controlled vocabulary populated by Gemini.
+// Used as semantic bridge between food pairing recommendations and cellar defragmentation.
+export type CuisineTag =
+  | 'aperitif' | 'party' | 'weeknight' | 'celebration'
+  | 'french-bistro' | 'italian-comfort' | 'grilling' | 'seafood'
+  | 'oysters' | 'mediterranean' | 'asian-fusion' | 'game-meat'
+  | 'cheese-board' | 'vegetarian' | 'fine-dining';
+
 export type TransactionType = 'add' | 'remove' | 'move';
 
 export interface Wine {
@@ -34,18 +46,34 @@ export interface Wine {
   alcohol?: number;
   sweetness?: number;
   body?: number;
+  // Extended structural scores (also 0–5)
+  minerality?: number;       // 0=earthy/fruit-forward, 5=stony/chalky/saline
+  oak_influence?: number;    // 0=unoaked/stainless, 5=heavily new-oaked
+  fruit_intensity?: number;  // 0=restrained/Old-World, 5=fruit-forward/jammy
   fruit_profile?: string;
+  // Drinking-weight classification: Gemini-populated during label scan, or derived from structural vector
+  pairing_weight?: PairingWeight;
+  // One-sentence Gemini rationale explaining why this wine pairs with its key foods
+  pairing_rationale?: string;
   created_at: string;
   updated_at: string;
 }
 
-// Five-dimension structural vector: [acidity, tannin, alcohol, sweetness, body]
-export type WineStructureVector = [number, number, number, number, number];
+// Eight-dimension structural vector: [acidity, tannin, alcohol, sweetness, body, minerality, oak_influence, fruit_intensity]
+export type WineStructureVector = [number, number, number, number, number, number, number, number];
 
 export interface WineFoodPairing {
   id: string;
   wine_id: string;
   food: string;
+  source: 'gemini' | 'manual';
+  created_at: string;
+}
+
+export interface WineCuisineTag {
+  id: string;
+  wine_id: string;
+  tag: CuisineTag;
   source: 'gemini' | 'manual';
   created_at: string;
 }
@@ -75,6 +103,19 @@ export interface CellarShare {
 
 export type LocationType = 'standard' | 'aging' | 'daily';
 
+// A named grouping of physical locations used for walk-order proximity.
+// Groups form a self-referential tree: parent_id = null → top-level group.
+// Proximity between two locations = LCA depth in this tree.
+export interface LocationGroup {
+  id: string;
+  profile_id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // A named physical location (rack, fridge, shelf) with optional capacity.
 // Rows in cellar_inventory reference these by name (within the same profile).
 // Bottles with location='' are "unlocated" — received but not yet placed.
@@ -88,9 +129,11 @@ export interface Location {
   // 'standard' = normal clustering; 'aging' = excluded from recommendations/defrag;
   // 'daily' = diversity-first scoring
   location_type?: LocationType;
-  // Grid position for walk-order optimization in defragment (null = unpositioned)
+  // Grid position for walk-order optimization (legacy, replaced by hierarchy_group_id)
   position_x?: number | null;
   position_y?: number | null;
+  // Tree-based proximity group — determines hierarchyDistance in defragment walk-order
+  hierarchy_group_id?: string | null;
   created_at: string;
   updated_at: string;
   // Computed fields (populated by getLocations join)
@@ -355,8 +398,15 @@ export interface DbAdapter {
   // Locations
   getLocations(profileId: string): Promise<Location[]>;
   createLocation(data: Omit<Location, 'id' | 'created_at' | 'updated_at' | 'current_quantity' | 'available_capacity'>): Promise<Location>;
-  updateLocation(id: string, data: Partial<Pick<Location, 'name' | 'group_name' | 'max_capacity' | 'notes' | 'location_type' | 'position_x' | 'position_y'>>): Promise<Location>;
+  updateLocation(id: string, data: Partial<Pick<Location, 'name' | 'group_name' | 'max_capacity' | 'notes' | 'location_type' | 'position_x' | 'position_y' | 'hierarchy_group_id'>>): Promise<Location>;
   deleteLocation(id: string): Promise<void>;
+
+  // Location groups (proximity hierarchy)
+  getLocationGroups(profileId: string): Promise<LocationGroup[]>;
+  getLocationGroupById(id: string): Promise<LocationGroup | null>;
+  createLocationGroup(data: Pick<LocationGroup, 'profile_id' | 'name' | 'parent_id' | 'sort_order'>): Promise<LocationGroup>;
+  updateLocationGroup(id: string, data: Partial<Pick<LocationGroup, 'name' | 'parent_id' | 'sort_order'>>): Promise<LocationGroup>;
+  deleteLocationGroup(id: string): Promise<void>;
 
   // Cellar inventory
   getCellarInventory(profileId: string, userId: string): Promise<CellarInventory[]>;
@@ -385,8 +435,14 @@ export interface DbAdapter {
   getFoodPairings(wineId: string): Promise<WineFoodPairing[]>;
   addFoodPairing(wineId: string, food: string, source: 'gemini' | 'manual'): Promise<WineFoodPairing>;
   deleteFoodPairing(id: string): Promise<void>;
-  getWinesWithPairings(foods: string[]): Promise<Wine[]>;
+  getWinesWithPairings(foods: string[], fuzzy?: boolean): Promise<Wine[]>;
   getAllFoods(): Promise<string[]>;
+
+  // Cuisine occasion tags
+  getCuisineTags(wineId: string): Promise<WineCuisineTag[]>;
+  addCuisineTag(wineId: string, tag: CuisineTag, source: 'gemini' | 'manual'): Promise<WineCuisineTag>;
+  deleteCuisineTag(id: string): Promise<void>;
+  getWinesWithCuisineTags(tags: CuisineTag[]): Promise<Wine[]>;
 
   // Freezer inventory
   getFreezerItems(profileId: string): Promise<FreezerItem[]>;

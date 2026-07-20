@@ -28,9 +28,9 @@ describe('toVector', () => {
     expect(toVector(makeWine({ id: 'x', name: 'X' }))).toBeNull();
   });
 
-  it('returns a 5-element vector when scores are present', () => {
+  it('returns an 8-element vector when scores are present', () => {
     const v = toVector(SEED_WINES[0]);
-    expect(v).toHaveLength(5);
+    expect(v).toHaveLength(8);
     expect(v![0]).toBe(3); // acidity
     expect(v![1]).toBe(5); // tannin
   });
@@ -76,7 +76,7 @@ describe('recommendWines', () => {
   it('each group has a valid centroid vector', () => {
     const groups = recommendWines(SEED_WINES, CANDIDATE_WINES, { k: 2, sampleM: 2 });
     groups.forEach(g => {
-      expect(g.centroid).toHaveLength(5);
+      expect(g.centroid).toHaveLength(8);
       g.centroid.forEach(v => {
         expect(v).toBeGreaterThanOrEqual(0);
         expect(v).toBeLessThanOrEqual(5);

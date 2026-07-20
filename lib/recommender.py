@@ -10,8 +10,8 @@ Output (stdout): JSON with key:  groups
 
 ──────────────────────────────────────────────────────────────────────────────
 STRUCTURAL VECTOR
-Each wine is mapped to a 5-element vector:
-  [acidity, tannin, alcohol, sweetness, body]
+Each wine is mapped to an 8-element vector:
+  [acidity, tannin, alcohol, sweetness, body, minerality, oak_influence, fruit_intensity]
 Values are 0–5.  Missing scores default to 2.5 (midpoint).
 
 ALGORITHM
@@ -24,7 +24,7 @@ SETTINGS (all optional, shown with defaults)
   k            = 5      number of clusters / style groups to return
   top_n        = 10     candidate pool size per cluster before sampling
   sample_m     = 3      wines to include per group in the final output
-  weights      = [1,1,1,1,1]  per-dimension multipliers for distance
+  weights      = [1,1,1,1,1,1,1,1]  per-dimension multipliers for distance
   sampling_mode = "closest"   "closest" | "diverse"
   seed         = 42     RNG seed (controls k-means++ init)
   max_iter     = 100    k-means iteration cap
@@ -40,12 +40,12 @@ from typing import Optional
 
 # ── Structural vector ─────────────────────────────────────────────────────────
 
-DIMS = ["acidity", "tannin", "alcohol", "sweetness", "body"]
+DIMS = ["acidity", "tannin", "alcohol", "sweetness", "body", "minerality", "oak_influence", "fruit_intensity"]
 DEFAULT_MISSING = 2.5   # used when a dimension is absent on a wine
 
 
 def to_vector(wine: dict) -> Optional[list[float]]:
-    """Return a 5-element float list for the wine, or None if all dims are null."""
+    """Return an 8-element float list for the wine, or None if all dims are null."""
     if all(wine.get(d) is None for d in DIMS):
         return None
     return [float(wine.get(d) or DEFAULT_MISSING) for d in DIMS]
@@ -216,7 +216,7 @@ def recommend(
     k            = int(settings.get("k", 5))
     top_n        = int(settings.get("topN", settings.get("top_n", 10)))
     sample_m     = int(settings.get("sampleM", settings.get("sample_m", 3)))
-    weights      = settings.get("weights", [1, 1, 1, 1, 1])
+    weights      = settings.get("weights", [1, 1, 1, 1, 1, 1, 1, 1])
     sampling_mode = settings.get("samplingMode", settings.get("sampling_mode", "closest"))
     seed         = int(settings.get("seed", 42))
     max_iter     = int(settings.get("maxIter", settings.get("max_iter", 100)))

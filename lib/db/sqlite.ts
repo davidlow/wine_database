@@ -6,6 +6,7 @@ import type {
   Wine,
   Profile,
   Location,
+  LocationGroup,
   CellarInventory,
   CellarShare,
   BottleTransaction,
@@ -62,6 +63,25 @@ function openDb(resolvedPath: string): Database.Database {
   try { conn.exec("ALTER TABLE locations ADD COLUMN location_type TEXT DEFAULT 'standard'"); } catch {}
   try { conn.exec('ALTER TABLE locations ADD COLUMN position_x REAL'); } catch {}
   try { conn.exec('ALTER TABLE locations ADD COLUMN position_y REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN pairing_weight TEXT'); } catch {}
+  try { conn.exec('ALTER TABLE locations ADD COLUMN hierarchy_group_id TEXT'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN minerality REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN oak_influence REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_intensity REAL'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN pairing_rationale TEXT'); } catch {}
+  // Create cuisine tags table if not present (new table, not a migration)
+  conn.exec(`
+    CREATE TABLE IF NOT EXISTS wine_cuisine_tags (
+      id         TEXT PRIMARY KEY,
+      wine_id    TEXT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+      tag        TEXT NOT NULL,
+      source     TEXT DEFAULT 'manual',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(wine_id, tag)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wct_wine_id ON wine_cuisine_tags(wine_id);
+    CREATE INDEX IF NOT EXISTS idx_wct_tag    ON wine_cuisine_tags(tag);
+  `);
   return conn;
 }
 
@@ -84,10 +104,11 @@ function nullify(obj: Record<string, unknown>, keys: readonly string[]): Record<
   return Object.fromEntries(keys.map(k => [k, obj[k] ?? null]));
 }
 
-const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'label_image', 'acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'fruit_profile', 'created_at', 'updated_at'] as const;
+const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'label_image', 'acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'minerality', 'oak_influence', 'fruit_intensity', 'fruit_profile', 'pairing_weight', 'pairing_rationale', 'created_at', 'updated_at'] as const;
 const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'group_name', 'created_at', 'updated_at'] as const;
 const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
-const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'location_type', 'position_x', 'position_y', 'created_at', 'updated_at'] as const;
+const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'location_type', 'position_x', 'position_y', 'hierarchy_group_id', 'created_at', 'updated_at'] as const;
+const LOCATION_GROUP_COLS = ['id', 'profile_id', 'name', 'parent_id', 'sort_order', 'created_at', 'updated_at'] as const;
 
 export function closeSqliteDb(): void {
   if (memoryDb) { memoryDb.close(); memoryDb = null; }
@@ -228,11 +249,13 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO wines (id, name, producer, variety, wine_type, region, appellation, country,
         vintage_year, description, average_price, alcohol_content, drink_from_year, drink_by_year,
-        barcode, image_url, label_image, acidity, tannin, alcohol, sweetness, body, fruit_profile,
+        barcode, image_url, label_image, acidity, tannin, alcohol, sweetness, body,
+        minerality, oak_influence, fruit_intensity, fruit_profile, pairing_weight, pairing_rationale,
         created_at, updated_at)
       VALUES (@id, @name, @producer, @variety, @wine_type, @region, @appellation, @country,
         @vintage_year, @description, @average_price, @alcohol_content, @drink_from_year, @drink_by_year,
-        @barcode, @image_url, @label_image, @acidity, @tannin, @alcohol, @sweetness, @body, @fruit_profile,
+        @barcode, @image_url, @label_image, @acidity, @tannin, @alcohol, @sweetness, @body,
+        @minerality, @oak_influence, @fruit_intensity, @fruit_profile, @pairing_weight, @pairing_rationale,
         @created_at, @updated_at)
     `).run(nullify(wine as unknown as Record<string, unknown>, WINE_COLS));
     return wine;
@@ -250,7 +273,9 @@ export const sqliteAdapter: DbAdapter = {
         drink_from_year=@drink_from_year, drink_by_year=@drink_by_year,
         barcode=@barcode, image_url=@image_url, label_image=@label_image,
         acidity=@acidity, tannin=@tannin, alcohol=@alcohol, sweetness=@sweetness,
-        body=@body, fruit_profile=@fruit_profile, updated_at=@updated_at
+        body=@body, minerality=@minerality, oak_influence=@oak_influence,
+        fruit_intensity=@fruit_intensity, fruit_profile=@fruit_profile,
+        pairing_weight=@pairing_weight, pairing_rationale=@pairing_rationale, updated_at=@updated_at
       WHERE id=@id
     `).run(nullify(updated as unknown as Record<string, unknown>, WINE_COLS));
     return updated;
@@ -327,14 +352,16 @@ export const sqliteAdapter: DbAdapter = {
   async getCellarInventory(profileId: string, _userId: string): Promise<CellarInventory[]> {
     const rows = getDb().prepare(`
       SELECT ci.*, w.name as wine_name, w.producer, w.variety, w.wine_type, w.vintage_year,
-             w.region, w.country, w.image_url, w.drink_from_year, w.drink_by_year
+             w.region, w.appellation, w.country, w.image_url, w.drink_from_year, w.drink_by_year,
+             w.acidity, w.tannin, w.body, w.pairing_weight,
+             w.minerality, w.oak_influence, w.fruit_intensity
       FROM cellar_inventory ci
       JOIN wines w ON w.id = ci.wine_id
       WHERE ci.profile_id = ? AND ci.quantity > 0
       ORDER BY w.name ASC
     `).all(profileId) as (CellarInventory & Record<string, unknown>)[];
 
-    return rows.map(({ wine_name, producer, variety, wine_type, vintage_year, region, country, image_url, drink_from_year, drink_by_year, ...ci }) => ({
+    return rows.map(({ wine_name, producer, variety, wine_type, vintage_year, region, appellation, country, image_url, drink_from_year, drink_by_year, acidity, tannin, body, pairing_weight, minerality, oak_influence, fruit_intensity, ...ci }) => ({
       ...ci,
       wine: {
         id: ci.wine_id,
@@ -344,10 +371,18 @@ export const sqliteAdapter: DbAdapter = {
         wine_type: wine_type as Wine['wine_type'],
         vintage_year: vintage_year as number | undefined,
         region: region as string | undefined,
+        appellation: appellation as string | undefined,
         country: country as string | undefined,
         image_url: image_url as string | undefined,
         drink_from_year: drink_from_year as number | undefined,
         drink_by_year: drink_by_year as number | undefined,
+        acidity: acidity as number | undefined,
+        tannin: tannin as number | undefined,
+        body: body as number | undefined,
+        pairing_weight: pairing_weight as Wine['pairing_weight'],
+        minerality: minerality as number | undefined,
+        oak_influence: oak_influence as number | undefined,
+        fruit_intensity: fruit_intensity as number | undefined,
         created_at: '',
         updated_at: '',
       },
@@ -502,7 +537,7 @@ export const sqliteAdapter: DbAdapter = {
   async getLocations(profileId: string): Promise<Location[]> {
     const rows = getDb().prepare(`
       SELECT l.id, l.profile_id, l.name, l.group_name, l.max_capacity, l.notes,
-             l.location_type, l.position_x, l.position_y, l.created_at, l.updated_at,
+             l.location_type, l.position_x, l.position_y, l.hierarchy_group_id, l.created_at, l.updated_at,
              COALESCE(SUM(CASE WHEN ci.quantity > 0 THEN ci.quantity ELSE 0 END), 0) AS current_quantity
       FROM locations l
       LEFT JOIN cellar_inventory ci
@@ -524,8 +559,8 @@ export const sqliteAdapter: DbAdapter = {
     const now = new Date().toISOString();
     const location: Location = { location_type: 'standard', ...data, id: generateId(), created_at: now, updated_at: now };
     d.prepare(`
-      INSERT INTO locations (id, profile_id, name, group_name, max_capacity, notes, location_type, position_x, position_y, created_at, updated_at)
-      VALUES (@id, @profile_id, @name, @group_name, @max_capacity, @notes, @location_type, @position_x, @position_y, @created_at, @updated_at)
+      INSERT INTO locations (id, profile_id, name, group_name, max_capacity, notes, location_type, position_x, position_y, hierarchy_group_id, created_at, updated_at)
+      VALUES (@id, @profile_id, @name, @group_name, @max_capacity, @notes, @location_type, @position_x, @position_y, @hierarchy_group_id, @created_at, @updated_at)
     `).run(nullify(location as unknown as Record<string, unknown>, LOCATION_COLS));
     return location;
   },
@@ -537,7 +572,8 @@ export const sqliteAdapter: DbAdapter = {
     const updated: Location = { ...existing, ...data, id, updated_at: new Date().toISOString() };
     d.prepare(`
       UPDATE locations SET name=@name, group_name=@group_name, max_capacity=@max_capacity, notes=@notes,
-        location_type=@location_type, position_x=@position_x, position_y=@position_y, updated_at=@updated_at
+        location_type=@location_type, position_x=@position_x, position_y=@position_y,
+        hierarchy_group_id=@hierarchy_group_id, updated_at=@updated_at
       WHERE id=@id
     `).run(nullify(updated as unknown as Record<string, unknown>, LOCATION_COLS));
     return updated;
@@ -545,6 +581,45 @@ export const sqliteAdapter: DbAdapter = {
 
   async deleteLocation(id): Promise<void> {
     getDb().prepare('DELETE FROM locations WHERE id = ?').run(id);
+  },
+
+  // --- Location Groups ---
+
+  async getLocationGroups(profileId: string): Promise<LocationGroup[]> {
+    return getDb().prepare(
+      'SELECT * FROM location_groups WHERE profile_id = ? ORDER BY sort_order ASC, name ASC'
+    ).all(profileId) as LocationGroup[];
+  },
+
+  async getLocationGroupById(id: string): Promise<LocationGroup | null> {
+    return (getDb().prepare('SELECT * FROM location_groups WHERE id = ?').get(id) as LocationGroup | undefined) ?? null;
+  },
+
+  async createLocationGroup(data): Promise<LocationGroup> {
+    const now = new Date().toISOString();
+    const group: LocationGroup = { ...data, id: generateId(), created_at: now, updated_at: now };
+    getDb().prepare(`
+      INSERT INTO location_groups (id, profile_id, name, parent_id, sort_order, created_at, updated_at)
+      VALUES (@id, @profile_id, @name, @parent_id, @sort_order, @created_at, @updated_at)
+    `).run(nullify(group as unknown as Record<string, unknown>, LOCATION_GROUP_COLS));
+    return group;
+  },
+
+  async updateLocationGroup(id, data): Promise<LocationGroup> {
+    const existing = await sqliteAdapter.getLocationGroupById(id);
+    if (!existing) throw new Error(`LocationGroup ${id} not found`);
+    const updated: LocationGroup = { ...existing, ...data, id, updated_at: new Date().toISOString() };
+    getDb().prepare(`
+      UPDATE location_groups SET name=@name, parent_id=@parent_id, sort_order=@sort_order, updated_at=@updated_at
+      WHERE id=@id
+    `).run(nullify(updated as unknown as Record<string, unknown>, LOCATION_GROUP_COLS));
+    return updated;
+  },
+
+  async deleteLocationGroup(id): Promise<void> {
+    // ON DELETE SET NULL on parent_id means child groups are promoted to top-level
+    // ON DELETE SET NULL on hierarchy_group_id means locations become unassigned
+    getDb().prepare('DELETE FROM location_groups WHERE id = ?').run(id);
   },
 
   // --- Facets ---
@@ -654,14 +729,31 @@ export const sqliteAdapter: DbAdapter = {
     getDb().prepare('DELETE FROM wine_food_pairings WHERE id = ?').run(id);
   },
 
-  async getWinesWithPairings(foods: string[]) {
+  async getWinesWithPairings(foods: string[], fuzzy = false) {
     if (foods.length === 0) return [];
-    const ph = foods.map(() => '?').join(', ');
-    return getDb().prepare(`
+    const lower = foods.map(f => f.toLowerCase());
+    const d = getDb();
+    if (!fuzzy) {
+      const ph = lower.map(() => '?').join(', ');
+      return d.prepare(`
+        SELECT DISTINCT w.* FROM wines w
+        JOIN wine_food_pairings wfp ON wfp.wine_id = w.id
+        WHERE LOWER(wfp.food) IN (${ph})
+      `).all(...lower) as import('@/types').Wine[];
+    }
+    // Fuzzy: exact IN first, then LIKE tokens for words > 3 chars (skip stopwords)
+    const STOPWORDS = new Set(['with', 'and', 'the', 'for', 'from', 'that', 'this', 'over', 'into']);
+    const tokens = [...new Set(
+      lower.flatMap(f => f.split(/\W+/).filter(t => t.length > 3 && !STOPWORDS.has(t)))
+    )];
+    const ph = lower.map(() => '?').join(', ');
+    const likeClauses = tokens.map(() => 'LOWER(wfp.food) LIKE ?').join(' OR ');
+    const sql = `
       SELECT DISTINCT w.* FROM wines w
       JOIN wine_food_pairings wfp ON wfp.wine_id = w.id
-      WHERE LOWER(wfp.food) IN (${ph})
-    `).all(...foods.map(f => f.toLowerCase())) as import('@/types').Wine[];
+      WHERE LOWER(wfp.food) IN (${ph})${likeClauses ? ` OR ${likeClauses}` : ''}
+    `;
+    return d.prepare(sql).all(...lower, ...tokens.map(t => `%${t}%`)) as import('@/types').Wine[];
   },
 
   async getAllFoods() {
@@ -669,6 +761,39 @@ export const sqliteAdapter: DbAdapter = {
       'SELECT DISTINCT LOWER(food) as food FROM wine_food_pairings ORDER BY food ASC'
     ).all() as { food: string }[];
     return rows.map(r => r.food);
+  },
+
+  // --- Cuisine tags ---
+
+  async getCuisineTags(wineId: string) {
+    return getDb().prepare(
+      'SELECT * FROM wine_cuisine_tags WHERE wine_id = ? ORDER BY created_at ASC'
+    ).all(wineId) as import('@/types').WineCuisineTag[];
+  },
+
+  async addCuisineTag(wineId: string, tag: import('@/types').CuisineTag, source: 'gemini' | 'manual') {
+    const d = getDb();
+    const row = { id: generateId(), wine_id: wineId, tag, source, created_at: new Date().toISOString() };
+    d.prepare(`
+      INSERT OR IGNORE INTO wine_cuisine_tags (id, wine_id, tag, source, created_at)
+      VALUES (@id, @wine_id, @tag, @source, @created_at)
+    `).run(row);
+    const existing = d.prepare('SELECT * FROM wine_cuisine_tags WHERE wine_id = ? AND tag = ?').get(wineId, tag) as import('@/types').WineCuisineTag;
+    return existing;
+  },
+
+  async deleteCuisineTag(id: string) {
+    getDb().prepare('DELETE FROM wine_cuisine_tags WHERE id = ?').run(id);
+  },
+
+  async getWinesWithCuisineTags(tags: import('@/types').CuisineTag[]) {
+    if (tags.length === 0) return [];
+    const ph = tags.map(() => '?').join(', ');
+    return getDb().prepare(`
+      SELECT DISTINCT w.* FROM wines w
+      JOIN wine_cuisine_tags wct ON wct.wine_id = w.id
+      WHERE wct.tag IN (${ph})
+    `).all(...tags) as import('@/types').Wine[];
   },
 
   // --- Freezer ---

@@ -1,7 +1,9 @@
 import type { WineLookupResult } from './types';
-import type { WineType } from '@/types';
+import type { WineType, PairingWeight } from '@/types';
 
 const CURRENT_YEAR = new Date().getFullYear();
+
+const CUISINE_TAGS = ['aperitif', 'party', 'weeknight', 'celebration', 'french-bistro', 'italian-comfort', 'grilling', 'seafood', 'oysters', 'mediterranean', 'asian-fusion', 'game-meat', 'cheese-board', 'vegetarian', 'fine-dining'] as const;
 
 const PROMPT = `You are a wine expert. Analyze this wine bottle label image and extract structured information.
 Use Google Search to look up the wine and fill in any details not visible on the label (grape variety, region, appellation, vintage if not shown, typical retail price, drink window, structural characteristics, food pairings).
@@ -26,8 +28,14 @@ Return ONLY a JSON object — no markdown, no code fences, no extra text:
   "alcohol": 3,
   "sweetness": 1,
   "body": 4,
+  "minerality": 2,
+  "oak_influence": 1,
+  "fruit_intensity": 3,
   "fruit_profile": "dark cherry, blackcurrant, plum with hints of cedar",
-  "food_pairings": ["grilled steak", "lamb chops", "aged cheddar", "mushroom risotto", "dark chocolate"],
+  "food_pairings": ["grilled ribeye", "rack of lamb", "duck confit", "aged gouda", "mushroom risotto", "braised short ribs", "lamb shoulder"],
+  "pairing_weight": "full",
+  "cuisine_tags": ["french-bistro", "game-meat"],
+  "pairing_rationale": "Firm tannins and dark fruit cut through rich meats while the earthy minerality complements mushroom-based dishes.",
   "confidence": 0.95
 }
 
@@ -36,8 +44,19 @@ Rules:
 - "average_price" is the typical retail price in USD — search for it if not on the label; omit if truly unknown
 - "drink_from_year" / "drink_by_year": default to vintage_year + 10 if unknown, or ${CURRENT_YEAR + 10} if no vintage
 - Structural scores 0–5: 0 = least/lightest, 5 = most/fullest (e.g. acidity 0=flat, 5=very tart; tannin 0=silky, 5=grippy; alcohol 0=low-ABV, 5=very high-alcohol; sweetness 0=bone-dry, 5=very sweet; body 0=light, 5=full-bodied)
+- "minerality" (0–5): 0=earthy/fruit-forward; 5=stony/chalky/saline. Loire Muscadet/Chablis/Pouilly-Fumé/Assyrtiko → 4-5; White Burgundy/Mosel → 2-3; Napa Chard/Viognier → 0-1
+- "oak_influence" (0–5): 0=stainless/unoaked; 1-2=old-oak/neutral; 3=mixed/partial; 4-5=new-oak/heavily oaked. Pouilly-Fumé/Sancerre → 0; Barossa Shiraz/new-oak Napa Chard → 4-5
+- "fruit_intensity" (0–5): 0=restrained/Old World; 5=fruit-forward/jammy/New World. Barolo/Mosel/Chablis → 1-2; Bordeaux → 2-3; Napa Cab/Barossa Shiraz/Marlborough SB → 4-5
 - "fruit_profile": brief free-text description of fruit aromas and flavors
-- "food_pairings": 4–8 specific dishes or food categories that pair well with this wine
+- "food_pairings": 6–10 specific dishes (NOT generic categories). Use precise dishes: "rack of lamb" not "lamb"; "grilled ribeye" not "red meat"; "pan-seared salmon" not "fish". Ensure diversity across occasions.
+- "pairing_weight": one of "delicate"|"light"|"medium"|"full"|"robust" reflecting the wine's drinking weight.
+  delicate = very light (Poulsard, Schiava, Muscadet); light = cool-climate Pinot Noir (Finger Lakes, Côte de Beaune), Gamay;
+  medium = Côte de Nuits / Oregon / Sonoma Pinot, Sangiovese, Grenache (Rhône), structured whites (white Burgundy, Grüner Veltliner);
+  full = Nebbiolo, Syrah, Malbec, Zinfandel, Napa Pinot, Cabernet-based blends, rich oaked whites (Chardonnay, Viognier);
+  robust = Cabernet Sauvignon, Petit Verdot, Tannat, Amarone, Pomerol-style Merlot.
+  Use the grape variety AND region together: a Napa Pinot is "full"; a Finger Lakes Pinot is "light".
+- "cuisine_tags": return 1–4 from EXACTLY this list: aperitif, party, weeknight, celebration, french-bistro, italian-comfort, grilling, seafood, oysters, mediterranean, asian-fusion, game-meat, cheese-board, vegetarian, fine-dining. Never invent new tags.
+- "pairing_rationale": one sentence naming specific wine characteristics (not the wine name) and why they suit the main pairing occasions.
 - Do not guess randomly — omit uncertain fields rather than fabricate them
 - "confidence" (0.0–1.0) reflects certainty in the overall extraction`;
 
@@ -79,8 +98,14 @@ type WineData = {
   alcohol?: number;
   sweetness?: number;
   body?: number;
+  minerality?: number;
+  oak_influence?: number;
+  fruit_intensity?: number;
   fruit_profile?: string;
   food_pairings?: string[];
+  pairing_weight?: string;
+  cuisine_tags?: unknown[];
+  pairing_rationale?: string;
   confidence?: number;
 };
 
@@ -143,8 +168,14 @@ Each object must include the "id" exactly as provided, plus any fields you can d
     "alcohol": 3,
     "sweetness": 1,
     "body": 4,
+    "minerality": 2,
+    "oak_influence": 1,
+    "fruit_intensity": 3,
     "fruit_profile": "dark cherry, blackcurrant",
-    "food_pairings": ["grilled steak", "lamb"],
+    "food_pairings": ["grilled ribeye", "rack of lamb", "duck confit", "aged gouda", "mushroom risotto", "lamb shoulder"],
+    "pairing_weight": "full",
+    "cuisine_tags": ["french-bistro", "game-meat"],
+    "pairing_rationale": "Firm tannins and dark fruit complement rich meats while the earthy notes work well with mushrooms.",
     "confidence": 0.9
   },
   ...one object per wine, in order...
@@ -154,7 +185,14 @@ Rules:
 - Include "id" in every object (copy exactly from my label)
 - "name" is required when identifiable; if you truly cannot read the label set "name": null
 - Structural scores 0–5 (0=least, 5=most)
+- "minerality" (0–5): Loire/Chablis/Muscadet/Assyrtiko → 4-5; Burgundy white → 2-3; Napa Chard → 0-1
+- "oak_influence" (0–5): stainless=0; old-oak=1-2; new-oak=4-5
+- "fruit_intensity" (0–5): Barolo/Mosel/Chablis → 1-2; Napa/Barossa/Marlborough → 4-5
+- "food_pairings": 6–10 specific dishes (NOT generic categories) — "rack of lamb" not "lamb"
+- "cuisine_tags": 1–4 from exactly: aperitif, party, weeknight, celebration, french-bistro, italian-comfort, grilling, seafood, oysters, mediterranean, asian-fusion, game-meat, cheese-board, vegetarian, fine-dining
+- "pairing_rationale": one sentence on wine characteristics and why they match the pairings
 - Do not fabricate uncertain fields — omit them
+- "pairing_weight": one of "delicate"|"light"|"medium"|"full"|"robust" (use variety + region: Napa Pinot → "full", Finger Lakes Pinot → "light")
 - Return exactly ${n} array elements, one per wine image`;
 }
 
@@ -206,6 +244,7 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
   const data = extractJson(text);
   if (!data.name) throw new Error('Could not identify wine name from label');
 
+  const validTags = new Set(CUISINE_TAGS as readonly string[]);
   return {
     found: true,
     barcode,
@@ -227,10 +266,20 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
     alcohol: clampScore(data.alcohol),
     sweetness: clampScore(data.sweetness),
     body: clampScore(data.body),
+    minerality: clampScore(data.minerality),
+    oak_influence: clampScore(data.oak_influence),
+    fruit_intensity: clampScore(data.fruit_intensity),
     fruit_profile: data.fruit_profile,
     food_pairings: Array.isArray(data.food_pairings)
       ? data.food_pairings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
       : undefined,
+    pairing_weight: (['delicate', 'light', 'medium', 'full', 'robust'] as const).includes(data.pairing_weight as PairingWeight)
+      ? data.pairing_weight as PairingWeight
+      : undefined,
+    cuisine_tags: Array.isArray(data.cuisine_tags)
+      ? data.cuisine_tags.filter((t): t is string => typeof t === 'string' && validTags.has(t))
+      : undefined,
+    pairing_rationale: typeof data.pairing_rationale === 'string' && data.pairing_rationale.trim() ? data.pairing_rationale.trim() : undefined,
     source: 'label-scan',
     confidence: data.confidence,
   };
@@ -281,6 +330,7 @@ export async function scanLabelBatch(
 
   const parsed = extractJsonArray(text);
 
+  const validTags = new Set(CUISINE_TAGS as readonly string[]);
   return parsed.map(data => ({
     id: (data as { id?: string }).id ?? '',
     found: !!(data.name),
@@ -302,10 +352,20 @@ export async function scanLabelBatch(
     alcohol: clampScore(data.alcohol),
     sweetness: clampScore(data.sweetness),
     body: clampScore(data.body),
+    minerality: clampScore(data.minerality),
+    oak_influence: clampScore(data.oak_influence),
+    fruit_intensity: clampScore(data.fruit_intensity),
     fruit_profile: data.fruit_profile,
     food_pairings: Array.isArray(data.food_pairings)
       ? data.food_pairings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
       : undefined,
+    pairing_weight: (['delicate', 'light', 'medium', 'full', 'robust'] as const).includes(data.pairing_weight as PairingWeight)
+      ? data.pairing_weight as PairingWeight
+      : undefined,
+    cuisine_tags: Array.isArray(data.cuisine_tags)
+      ? data.cuisine_tags.filter((t): t is string => typeof t === 'string' && validTags.has(t))
+      : undefined,
+    pairing_rationale: typeof data.pairing_rationale === 'string' && data.pairing_rationale.trim() ? data.pairing_rationale.trim() : undefined,
     confidence: data.confidence,
     source: 'label-scan' as const,
   }));

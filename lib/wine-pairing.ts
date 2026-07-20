@@ -15,10 +15,12 @@ export interface RecommendationGroup {
   wines: Array<Wine & { distance: number }>;
 }
 
+const DIMS = ['acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'minerality', 'oak_influence', 'fruit_intensity'] as const;
+type Dim = (typeof DIMS)[number];
+
 export function toVector(wine: Wine): WineStructureVector | null {
-  const { acidity, tannin, alcohol, sweetness, body } = wine;
-  if (acidity == null && tannin == null && alcohol == null && sweetness == null && body == null) return null;
-  return [acidity ?? 2.5, tannin ?? 2.5, alcohol ?? 2.5, sweetness ?? 2.5, body ?? 2.5];
+  if (DIMS.every(d => wine[d as Dim] == null)) return null;
+  return DIMS.map(d => (wine[d as Dim] as number | undefined) ?? 2.5) as unknown as WineStructureVector;
 }
 
 // Shuffle array in place using Fisher-Yates (seeded via simple counter for reproducibility)

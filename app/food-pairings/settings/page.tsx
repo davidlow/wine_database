@@ -13,11 +13,11 @@ const DEFAULTS: Required<Omit<PairingSettings, 'weights'>> & { weights: DimWeigh
   k: 5,
   topN: 10,
   sampleM: 3,
-  weights: [1, 1, 1, 1, 1],
+  weights: [1, 1, 1, 1, 1, 1, 1, 1],
   samplingMode: 'closest',
 };
 
-const DIM_LABELS = ['Acidity', 'Tannin', 'Alcohol', 'Sweetness', 'Body'];
+const DIM_LABELS = ['Acidity', 'Tannin', 'Alcohol', 'Sweetness', 'Body', 'Minerality', 'Oak Influence', 'Fruit Intensity'];
 
 function load(): typeof DEFAULTS {
   if (typeof window === 'undefined') return { ...DEFAULTS };

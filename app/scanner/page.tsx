@@ -39,6 +39,7 @@ export default function ScannerPage() {
   const [showScanner, setShowScanner] = useState(true);
   const [capturedLabelImage, setCapturedLabelImage] = useState<string | null>(null);
   const [labelFoodPairings, setLabelFoodPairings] = useState<string[]>([]);
+  const [labelCuisineTags, setLabelCuisineTags] = useState<string[]>([]);
 
   const handleDetected = async (barcode: string) => {
     if (processingRef.current) return;
@@ -93,6 +94,9 @@ export default function ScannerPage() {
       if (Array.isArray(data.food_pairings) && data.food_pairings.length > 0) {
         setLabelFoodPairings(data.food_pairings as string[]);
       }
+      if (Array.isArray(data.cuisine_tags) && data.cuisine_tags.length > 0) {
+        setLabelCuisineTags(data.cuisine_tags as string[]);
+      }
       setScanState('confirming');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Label analysis failed');
@@ -109,7 +113,11 @@ export default function ScannerPage() {
     if (result?.alcohol != null) extras.alcohol = result.alcohol;
     if (result?.sweetness != null) extras.sweetness = result.sweetness;
     if (result?.body != null) extras.body = result.body;
+    if (result?.minerality != null) extras.minerality = result.minerality;
+    if (result?.oak_influence != null) extras.oak_influence = result.oak_influence;
+    if (result?.fruit_intensity != null) extras.fruit_intensity = result.fruit_intensity;
     if (result?.fruit_profile) extras.fruit_profile = result.fruit_profile;
+    if (result?.pairing_rationale) extras.pairing_rationale = result.pairing_rationale;
 
     const res = await fetch('/api/wines', {
       method: 'POST',
@@ -130,6 +138,16 @@ export default function ScannerPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ food }),
         }).catch(() => { /* ignore individual pairing failures */ });
+      }
+    }
+    // Batch-add cuisine tags from Gemini label scan (fire-and-forget, non-blocking)
+    if (labelCuisineTags.length > 0) {
+      for (const tag of labelCuisineTags) {
+        fetch(`/api/wines/${wine.id}/cuisine-tags`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tag }),
+        }).catch(() => { /* ignore individual tag failures */ });
       }
     }
 

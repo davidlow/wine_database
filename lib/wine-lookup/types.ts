@@ -1,4 +1,4 @@
-import type { WineType } from '@/types';
+import type { WineType, PairingWeight } from '@/types';
 
 export interface WineLookupResult {
   found: boolean;
@@ -25,6 +25,12 @@ export interface WineLookupResult {
   body?: number;
   fruit_profile?: string;
   food_pairings?: string[];  // suggested food pairings from Gemini
+  pairing_weight?: PairingWeight; // Gemini-assigned drinking-weight classification
+  minerality?: number;         // 0–5: 0=earthy, 5=stony/chalky/saline
+  oak_influence?: number;      // 0–5: 0=unoaked, 5=heavily new-oaked
+  fruit_intensity?: number;    // 0–5: 0=restrained/Old-World, 5=fruit-forward/jammy
+  pairing_rationale?: string;  // Gemini one-sentence explanation of food pairing logic
+  cuisine_tags?: string[];     // 1–4 tags from the 15-item controlled vocabulary
   source?: 'database' | 'openfoodfacts' | 'label-scan' | 'manual';
   confidence?: number;
 }

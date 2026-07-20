@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, Edit, Trash2, Copy, MapPin, Calendar, DollarSign, Percent, GlassWater, Loader2, NotebookPen, X, UtensilsCrossed, Plus } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
-import type { Wine, CellarInventory, BottleTransaction, WineNote, WineFoodPairing } from '@/types';
+import type { Wine, CellarInventory, BottleTransaction, WineNote, WineFoodPairing, WineCuisineTag, CuisineTag } from '@/types';
 import BottleManager from '@/components/BottleManager';
 import TransactionLog from '@/components/TransactionLog';
 import { cn, wineTypeLabel, wineTypeColor, wineTypeBorderColor, formatPrice, formatDate } from '@/lib/utils';
@@ -26,6 +26,9 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
   const [pairings, setPairings] = useState<WineFoodPairing[]>([]);
   const [newPairing, setNewPairing] = useState('');
   const [addingPairing, setAddingPairing] = useState(false);
+  const [cuisineTags, setCuisineTags] = useState<WineCuisineTag[]>([]);
+  const [addingTag, setAddingTag] = useState(false);
+  const [newTag, setNewTag] = useState<CuisineTag | ''>('');
 
   const loadInventory = async () => {
     if (!profiles.length) return;
@@ -56,6 +59,35 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
   const loadPairings = async () => {
     const res = await fetch(`/api/wines/${id}/pairings`);
     if (res.ok) setPairings(await res.json());
+  };
+
+  const loadCuisineTags = async () => {
+    const res = await fetch(`/api/wines/${id}/cuisine-tags`);
+    if (res.ok) setCuisineTags(await res.json());
+  };
+
+  const handleAddCuisineTag = async () => {
+    if (!newTag) return;
+    setAddingTag(true);
+    try {
+      const res = await fetch(`/api/wines/${id}/cuisine-tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: newTag }),
+      });
+      if (res.ok) { setNewTag(''); await loadCuisineTags(); }
+    } finally {
+      setAddingTag(false);
+    }
+  };
+
+  const handleDeleteCuisineTag = async (tagId: string) => {
+    await fetch(`/api/wines/${id}/cuisine-tags`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tagId }),
+    });
+    await loadCuisineTags();
   };
 
   const handleAddPairing = async (e: React.FormEvent) => {
@@ -89,7 +121,7 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
       try {
         const res = await fetch(`/api/wines/${id}`);
         if (res.ok) setWine(await res.json());
-        await Promise.all([loadInventory(), loadTransactions(), loadNotes(), loadPairings()]);
+        await Promise.all([loadInventory(), loadTransactions(), loadNotes(), loadPairings(), loadCuisineTags()]);
       } finally {
         setLoading(false);
       }
@@ -379,6 +411,62 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             {pairings.some(p => p.source === 'gemini') && (
               <p className="text-xs text-muted-foreground">Purple chips were suggested by Gemini AI.</p>
             )}
+
+            {/* Pairing rationale from Gemini */}
+            {wine.pairing_rationale && (
+              <div className="rounded-md bg-purple-50 border border-purple-200 px-3 py-2 text-sm text-purple-800">
+                <span className="font-medium">Why: </span>{wine.pairing_rationale}
+              </div>
+            )}
+
+            {/* Cuisine / occasion tags */}
+            <div className="space-y-2 pt-1 border-t">
+              <p className="text-sm font-medium text-muted-foreground">Occasion Tags</p>
+              {cuisineTags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {cuisineTags.map((t) => (
+                    <div key={t.id} className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border',
+                      t.source === 'gemini' ? 'bg-purple-50 border-purple-200 text-purple-800' : 'bg-accent border-border'
+                    )}>
+                      <span>{t.tag}</span>
+                      <button onClick={() => handleDeleteCuisineTag(t.id)} className="text-muted-foreground hover:text-destructive">
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No occasion tags yet.</p>
+              )}
+              {/* Add tag */}
+              {(() => {
+                const ALL_TAGS: CuisineTag[] = ['aperitif','party','weeknight','celebration','french-bistro','italian-comfort','grilling','seafood','oysters','mediterranean','asian-fusion','game-meat','cheese-board','vegetarian','fine-dining'];
+                const usedTags = new Set(cuisineTags.map(t => t.tag));
+                const availableTags = ALL_TAGS.filter(t => !usedTags.has(t));
+                if (availableTags.length === 0) return null;
+                return (
+                  <div className="flex gap-2 items-center">
+                    <select
+                      value={newTag}
+                      onChange={e => setNewTag(e.target.value as CuisineTag | '')}
+                      className="flex-1 px-2 py-1.5 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">Add tag…</option>
+                      {availableTags.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button
+                      onClick={handleAddCuisineTag}
+                      disabled={!newTag || addingTag}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0"
+                    >
+                      {addingTag ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                      Add
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         )}
 

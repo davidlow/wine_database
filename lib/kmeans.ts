@@ -1,11 +1,11 @@
 import type { WineStructureVector } from '@/types';
 
-export type DimWeights = [number, number, number, number, number];
-export const DEFAULT_WEIGHTS: DimWeights = [1, 1, 1, 1, 1];
+export type DimWeights = [number, number, number, number, number, number, number, number];
+export const DEFAULT_WEIGHTS: DimWeights = [1, 1, 1, 1, 1, 1, 1, 1];
 
 export function weightedDistance(a: WineStructureVector, b: WineStructureVector, w: DimWeights): number {
   let sum = 0;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 8; i++) {
     const diff = a[i] - b[i];
     sum += w[i] * diff * diff;
   }
@@ -13,10 +13,10 @@ export function weightedDistance(a: WineStructureVector, b: WineStructureVector,
 }
 
 function centroid(points: WineStructureVector[]): WineStructureVector {
-  if (points.length === 0) return [0, 0, 0, 0, 0];
-  const sums: WineStructureVector = [0, 0, 0, 0, 0];
+  if (points.length === 0) return [0, 0, 0, 0, 0, 0, 0, 0];
+  const sums: WineStructureVector = [0, 0, 0, 0, 0, 0, 0, 0];
   for (const p of points) {
-    for (let i = 0; i < 5; i++) sums[i] += p[i];
+    for (let i = 0; i < 8; i++) sums[i] += p[i];
   }
   return sums.map(s => s / points.length) as WineStructureVector;
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import { getDb } from '@/lib/db';
+import type { CuisineTag } from '@/types';
 
 // Calls lib/recommender.py with the wine data and settings as JSON on stdin.
 // Returns the parsed JSON output, or throws on non-zero exit / bad JSON.
@@ -37,11 +38,24 @@ async function runPythonRecommender(payload: object): Promise<{ groups: unknown[
   });
 }
 
+// Infer pairing_weight hints from food keywords for broader seed coverage
+const FOOD_WEIGHT_HINTS: Array<{ keywords: string[]; weights: string[] }> = [
+  { keywords: ['steak', 'ribeye', 'brisket', 'lamb', 'venison', 'game', 'boar', 'elk', 'osso buco'], weights: ['full', 'robust'] },
+  { keywords: ['salmon', 'tuna', 'swordfish', 'seafood', 'lobster', 'crab', 'shrimp'], weights: ['delicate', 'light', 'medium'] },
+  { keywords: ['oyster', 'clam', 'mussel', 'scallop'], weights: ['delicate', 'light'] },
+  { keywords: ['chicken', 'pork', 'veal', 'duck', 'turkey'], weights: ['light', 'medium', 'full'] },
+  { keywords: ['pasta', 'pizza', 'risotto', 'lasagna'], weights: ['medium', 'full'] },
+  { keywords: ['salad', 'vegetable', 'tofu', 'mushroom'], weights: ['delicate', 'light', 'medium'] },
+  { keywords: ['cheese', 'charcuterie', 'charcuteri'], weights: ['medium', 'full'] },
+  { keywords: ['dessert', 'chocolate', 'cake', 'tart'], weights: ['dessert'] },
+];
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { foods, profile_ids, settings } = body as {
+    const { foods, cuisine_tags, profile_ids, settings } = body as {
       foods: string[];
+      cuisine_tags?: CuisineTag[];
       profile_ids?: string[];
       settings?: Record<string, unknown>;
     };
@@ -52,7 +66,34 @@ export async function POST(request: NextRequest) {
 
     const db = await getDb();
 
-    const seedWines = await db.getWinesWithPairings(foods);
+    // Multi-source seed pool — run in parallel
+    const lowerFoods = foods.map(f => f.toLowerCase());
+
+    // Source 1: fuzzy food string match
+    const foodSeedPromise = db.getWinesWithPairings(foods, true);
+
+    // Source 2: cuisine tag match (if provided)
+    const tagSeedPromise = cuisine_tags?.length
+      ? db.getWinesWithCuisineTags(cuisine_tags)
+      : Promise.resolve([]);
+
+    // Source 3: pairing_weight keyword inference
+    const inferredWeights = new Set<string>();
+    for (const hint of FOOD_WEIGHT_HINTS) {
+      if (hint.keywords.some(kw => lowerFoods.some(f => f.includes(kw)))) {
+        hint.weights.forEach(w => inferredWeights.add(w));
+      }
+    }
+
+    const [foodSeeds, tagSeeds] = await Promise.all([foodSeedPromise, tagSeedPromise]);
+
+    // Merge unique seeds
+    const seedMap = new Map<string, import('@/types').Wine>();
+    for (const w of [...foodSeeds, ...tagSeeds]) {
+      if (!seedMap.has(w.id)) seedMap.set(w.id, w);
+    }
+    const seedWines = [...seedMap.values()];
+
     const candidateParams = profile_ids?.length ? { profile_ids: profile_ids.join(',') } : {};
     const candidateWines = await db.getWines(candidateParams);
 

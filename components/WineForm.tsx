@@ -46,11 +46,14 @@ function Field({ label, required, children, hint }: {
 }
 
 const STRUCTURE_LABELS: Record<string, { lo: string; hi: string }> = {
-  acidity:   { lo: 'Flat', hi: 'Tart' },
-  tannin:    { lo: 'Silky', hi: 'Grippy' },
-  alcohol:   { lo: 'Low', hi: 'High' },
-  sweetness: { lo: 'Dry', hi: 'Sweet' },
-  body:      { lo: 'Light', hi: 'Full' },
+  acidity:        { lo: 'Flat', hi: 'Tart' },
+  tannin:         { lo: 'Silky', hi: 'Grippy' },
+  alcohol:        { lo: 'Low', hi: 'High' },
+  sweetness:      { lo: 'Dry', hi: 'Sweet' },
+  body:           { lo: 'Light', hi: 'Full' },
+  minerality:     { lo: 'Earthy', hi: 'Mineral' },
+  oak_influence:  { lo: 'Unoaked', hi: 'Oaked' },
+  fruit_intensity:{ lo: 'Restrained', hi: 'Fruit-forward' },
 };
 
 function StructureSlider({
@@ -115,7 +118,11 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
     alcohol: (merged as Partial<Wine>).alcohol,
     sweetness: (merged as Partial<Wine>).sweetness,
     body: (merged as Partial<Wine>).body,
+    minerality: (merged as Partial<Wine>).minerality,
+    oak_influence: (merged as Partial<Wine>).oak_influence,
+    fruit_intensity: (merged as Partial<Wine>).fruit_intensity,
     fruit_profile: (merged as Partial<Wine>).fruit_profile ?? '',
+    pairing_rationale: (merged as Partial<Wine>).pairing_rationale ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +166,11 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
           alcohol: result.alcohol ?? prev.alcohol,
           sweetness: result.sweetness ?? prev.sweetness,
           body: result.body ?? prev.body,
+          minerality: result.minerality ?? prev.minerality,
+          oak_influence: result.oak_influence ?? prev.oak_influence,
+          fruit_intensity: result.fruit_intensity ?? prev.fruit_intensity,
           fruit_profile: result.fruit_profile ?? prev.fruit_profile,
+          pairing_rationale: result.pairing_rationale ?? prev.pairing_rationale,
         }));
         setLabelScanMsg('Label scanned — fields updated from AI. Review and correct as needed.');
       } else {
@@ -410,10 +421,10 @@ export default function WineForm({ initialData, lookupResult, onSubmit, onCancel
       <div className="rounded-md border bg-muted/30 p-3 space-y-3">
         <p className="text-sm font-semibold text-muted-foreground">Structural Profile <span className="font-normal">(0 = less · 5 = more)</span></p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-          {(['acidity', 'tannin', 'sweetness', 'body', 'alcohol'] as const).map((key) => (
+          {(['acidity', 'tannin', 'sweetness', 'body', 'alcohol', 'minerality', 'oak_influence', 'fruit_intensity'] as const).map((key) => (
             <StructureSlider
               key={key}
-              label={key.charAt(0).toUpperCase() + key.slice(1)}
+              label={key === 'oak_influence' ? 'Oak Influence' : key === 'fruit_intensity' ? 'Fruit Intensity' : key.charAt(0).toUpperCase() + key.slice(1)}
               fieldKey={key}
               value={form[key] as number | undefined}
               onChange={(v) => set(key, v)}

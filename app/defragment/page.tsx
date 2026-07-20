@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import {
-  Shuffle, Loader2, ChevronDown, ChevronUp, MapPin, Play,
-  CheckCircle, ArrowRight, SkipForward, Settings2,
+  Shuffle, Loader2, MapPin, Play,
+  CheckCircle, ArrowRight, SkipForward, Settings2, FolderTree,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Location } from '@/types';
@@ -19,6 +19,7 @@ export default function DefragmentPage() {
   const profileId = activeProfile?.id;
 
   const [locations, setLocations] = useState<Location[]>([]);
+  const [groupCount, setGroupCount] = useState(0);
   const [carryLimit, setCarryLimit] = useState(4);
   const [includeAging, setIncludeAging] = useState(false);
   const [step, setStep] = useState<PageStep>('configure');
@@ -27,7 +28,6 @@ export default function DefragmentPage() {
   const [generating, setGenerating] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [skippedTrips, setSkippedTrips] = useState<Set<number>>(new Set());
-  const [mapOpen, setMapOpen] = useState(false);
 
   // Execution state
   const [currentTripIdx, setCurrentTripIdx] = useState(0);
@@ -36,24 +36,15 @@ export default function DefragmentPage() {
   const [execError, setExecError] = useState<string | null>(null);
   const [moverTrip, setMoverTrip] = useState<Trip | null>(null);
 
-  // Position editor state
-  const [editPos, setEditPos] = useState<Record<string, { x: string; y: string }>>({});
-  const [savingPos, setSavingPos] = useState<string | null>(null);
-
   useEffect(() => {
     if (!profileId) return;
-    fetch(`/api/locations?profile_id=${profileId}`)
-      .then(r => r.ok ? r.json() : [])
-      .then((locs: Location[]) => {
+    Promise.all([
+      fetch(`/api/locations?profile_id=${profileId}`).then(r => r.ok ? r.json() : []),
+      fetch(`/api/location-groups?profile_id=${profileId}`).then(r => r.ok ? r.json() : []),
+    ])
+      .then(([locs, groups]: [Location[], unknown[]]) => {
         setLocations(locs);
-        const initial: Record<string, { x: string; y: string }> = {};
-        for (const l of locs) {
-          initial[l.id] = {
-            x: l.position_x != null ? String(l.position_x) : '',
-            y: l.position_y != null ? String(l.position_y) : '',
-          };
-        }
-        setEditPos(initial);
+        setGroupCount(groups.length);
       })
       .catch(() => {});
   }, [profileId]);
@@ -84,24 +75,6 @@ export default function DefragmentPage() {
       setGenerating(false);
     }
   }, [profileId, carryLimit, includeAging]);
-
-  const savePosition = async (locId: string) => {
-    const pos = editPos[locId];
-    if (!pos) return;
-    setSavingPos(locId);
-    try {
-      await fetch(`/api/locations/${locId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_x: pos.x ? parseFloat(pos.x) : null,
-          position_y: pos.y ? parseFloat(pos.y) : null,
-        }),
-      });
-    } finally {
-      setSavingPos(null);
-    }
-  };
 
   const activePlan = plan ? {
     ...plan,
@@ -159,56 +132,26 @@ export default function DefragmentPage() {
         </div>
       </div>
 
-      {/* Location Position Map (collapsible) */}
-      <div className="rounded-lg border">
-        <button
-          onClick={() => setMapOpen(o => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-accent/50 transition-colors"
+      {/* Proximity Groups info */}
+      <div className="rounded-lg border px-4 py-3 flex items-start gap-3">
+        <FolderTree className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">
+            Proximity Groups
+            <span className="ml-2 text-xs text-muted-foreground font-normal">improves walk order</span>
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {groupCount > 0
+              ? `${groupCount} group${groupCount !== 1 ? 's' : ''} configured — walk order uses hierarchy distance`
+              : 'No groups set — walk order falls back to alphabetical'}
+          </p>
+        </div>
+        <a
+          href="/cellar/hierarchy"
+          className="text-xs text-primary hover:underline shrink-0 self-center"
         >
-          <span className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-            Location Position Map
-            <span className="text-xs text-muted-foreground font-normal">(optional — improves walk order)</span>
-          </span>
-          {mapOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
-
-        {mapOpen && (
-          <div className="border-t px-4 py-4 space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Assign X/Y coordinates to reflect the physical layout of your cellar.
-              Locations with positions set will be walk-ordered optimally.
-            </p>
-            <div className="space-y-2">
-              {locations.map(loc => (
-                <div key={loc.id} className="flex items-center gap-2">
-                  <span className="text-sm flex-1 truncate">{loc.name}</span>
-                  <input
-                    type="number"
-                    placeholder="X"
-                    value={editPos[loc.id]?.x ?? ''}
-                    onChange={e => setEditPos(p => ({ ...p, [loc.id]: { ...p[loc.id], x: e.target.value } }))}
-                    className="w-16 rounded-md border bg-background px-2 py-1 text-xs text-center"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Y"
-                    value={editPos[loc.id]?.y ?? ''}
-                    onChange={e => setEditPos(p => ({ ...p, [loc.id]: { ...p[loc.id], y: e.target.value } }))}
-                    className="w-16 rounded-md border bg-background px-2 py-1 text-xs text-center"
-                  />
-                  <button
-                    onClick={() => savePosition(loc.id)}
-                    disabled={savingPos === loc.id}
-                    className="px-2.5 py-1 rounded-md border text-xs hover:bg-accent disabled:opacity-50 transition-colors"
-                  >
-                    {savingPos === loc.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+          Configure →
+        </a>
       </div>
 
       {/* Step 1: Configure */}
@@ -301,6 +244,26 @@ export default function DefragmentPage() {
               </div>
             )}
           </div>
+
+          {/* Skipped-too-large notice */}
+          {(plan.skippedTooLarge ?? 0) > 0 && (
+            <div className="rounded-md bg-muted/60 px-4 py-3 text-xs text-muted-foreground flex items-start gap-2">
+              <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>
+                {plan.skippedTooLarge} wine{plan.skippedTooLarge !== 1 ? 's' : ''} skipped — too large to fit in a single location or any sibling group.
+              </span>
+            </div>
+          )}
+
+          {/* Related-wines notes */}
+          {(plan.relatedWinesNotes?.length ?? 0) > 0 && (
+            <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+              <p className="font-medium">Related wines in different locations:</p>
+              {plan.relatedWinesNotes.map((note, i) => (
+                <p key={i} className="opacity-80">↳ {note}</p>
+              ))}
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="flex gap-1 border rounded-md p-1 bg-muted/40">

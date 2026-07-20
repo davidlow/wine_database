@@ -6,12 +6,15 @@ import type {
   CellarShare,
   BottleTransaction,
   Location,
+  LocationGroup,
   WineNote,
   WineSearchParams,
   AddBottleInput,
   RemoveBottleInput,
   MoveBottleInput,
   WineFoodPairing,
+  WineCuisineTag,
+  CuisineTag,
   FreezerItem,
   FreezerTransaction,
   FreezerLocation,
@@ -394,6 +397,57 @@ export const supabaseAdapter: DbAdapter = {
     if (error) throw error;
   },
 
+  // --- Location groups ---
+
+  async getLocationGroups(profileId: string): Promise<LocationGroup[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('location_groups')
+      .select('*')
+      .eq('profile_id', profileId)
+      .order('sort_order')
+      .order('name');
+    if (error) throw error;
+    return (data ?? []) as LocationGroup[];
+  },
+
+  async getLocationGroupById(id: string): Promise<LocationGroup | null> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('location_groups')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data as LocationGroup;
+  },
+
+  async createLocationGroup(input: Pick<LocationGroup, 'profile_id' | 'name' | 'parent_id' | 'sort_order'>): Promise<LocationGroup> {
+    const now = new Date().toISOString();
+    const row = { ...input, id: crypto.randomUUID(), created_at: now, updated_at: now };
+    const { data, error } = await getSupabaseAdmin()
+      .from('location_groups')
+      .insert(row)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as LocationGroup;
+  },
+
+  async updateLocationGroup(id: string, updates: Partial<Pick<LocationGroup, 'name' | 'parent_id' | 'sort_order'>>): Promise<LocationGroup> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('location_groups')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as LocationGroup;
+  },
+
+  async deleteLocationGroup(id: string): Promise<void> {
+    const { error } = await getSupabaseAdmin().from('location_groups').delete().eq('id', id);
+    if (error) throw error;
+  },
+
   // --- Facets ---
 
   async getWineFacets(field: string, q: string): Promise<string[]> {
@@ -537,14 +591,31 @@ export const supabaseAdapter: DbAdapter = {
     await getSupabaseAdmin().from('wine_food_pairings').delete().eq('id', id);
   },
 
-  async getWinesWithPairings(foods: string[]) {
+  async getWinesWithPairings(foods: string[], fuzzy = false) {
     if (foods.length === 0) return [];
     const lower = foods.map(f => f.toLowerCase());
-    const { data: pairings } = await getSupabaseAdmin()
-      .from('wine_food_pairings').select('wine_id').in('food', lower);
-    const wineIds = [...new Set((pairings ?? []).map(p => p.wine_id))];
+    const supabase = getSupabaseAdmin();
+    let wineIds: string[];
+
+    if (!fuzzy) {
+      const { data: pairings } = await supabase.from('wine_food_pairings').select('wine_id').in('food', lower);
+      wineIds = [...new Set((pairings ?? []).map((p: { wine_id: string }) => p.wine_id))];
+    } else {
+      const { data: exact } = await supabase.from('wine_food_pairings').select('wine_id').in('food', lower);
+      const exactIds = new Set((exact ?? []).map((p: { wine_id: string }) => p.wine_id));
+      // Fuzzy: LIKE on meaningful tokens
+      const STOPWORDS = new Set(['with', 'and', 'the', 'for', 'from', 'that', 'this', 'over', 'into']);
+      const tokens = [...new Set(lower.flatMap(f => f.split(/\W+/).filter(t => t.length > 3 && !STOPWORDS.has(t))))];
+      const fuzzyIds = new Set<string>();
+      for (const token of tokens) {
+        const { data: fuzzyRows } = await supabase.from('wine_food_pairings').select('wine_id').ilike('food', `%${token}%`);
+        (fuzzyRows ?? []).forEach((p: { wine_id: string }) => fuzzyIds.add(p.wine_id));
+      }
+      wineIds = [...new Set([...exactIds, ...fuzzyIds])];
+    }
+
     if (wineIds.length === 0) return [];
-    const { data, error } = await getSupabaseAdmin().from('wines').select('*').in('id', wineIds);
+    const { data, error } = await supabase.from('wines').select('*').in('id', wineIds);
     if (error) throw error;
     return (data ?? []) as Wine[];
   },
@@ -554,6 +625,39 @@ export const supabaseAdapter: DbAdapter = {
       .from('wine_food_pairings').select('food').order('food');
     const unique = [...new Set((data ?? []).map((r: { food: string }) => r.food.toLowerCase()))];
     return unique.sort();
+  },
+
+  // --- Cuisine tags ---
+
+  async getCuisineTags(wineId: string) {
+    const { data, error } = await getSupabaseAdmin()
+      .from('wine_cuisine_tags').select('*').eq('wine_id', wineId).order('created_at');
+    if (error) throw error;
+    return (data ?? []) as WineCuisineTag[];
+  },
+
+  async addCuisineTag(wineId: string, tag: CuisineTag, source: 'gemini' | 'manual') {
+    const supabase = getSupabaseAdmin();
+    const row = { id: generateId(), wine_id: wineId, tag, source, created_at: new Date().toISOString() };
+    const { error } = await supabase.from('wine_cuisine_tags').upsert(row, { onConflict: 'wine_id,tag', ignoreDuplicates: true });
+    if (error) throw error;
+    const { data: existing } = await supabase.from('wine_cuisine_tags').select('*').eq('wine_id', wineId).eq('tag', tag).single();
+    return (existing ?? row) as WineCuisineTag;
+  },
+
+  async deleteCuisineTag(id: string) {
+    await getSupabaseAdmin().from('wine_cuisine_tags').delete().eq('id', id);
+  },
+
+  async getWinesWithCuisineTags(tags: CuisineTag[]) {
+    if (tags.length === 0) return [];
+    const { data: rows } = await getSupabaseAdmin()
+      .from('wine_cuisine_tags').select('wine_id').in('tag', tags);
+    const wineIds = [...new Set((rows ?? []).map((r: { wine_id: string }) => r.wine_id))];
+    if (wineIds.length === 0) return [];
+    const { data, error } = await getSupabaseAdmin().from('wines').select('*').in('id', wineIds);
+    if (error) throw error;
+    return (data ?? []) as Wine[];
   },
 
   // --- Freezer ---

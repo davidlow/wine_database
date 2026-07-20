@@ -2,23 +2,30 @@ import { describe, it, expect } from 'vitest';
 import { kmeans, weightedDistance, DEFAULT_WEIGHTS } from '@/lib/kmeans';
 import type { WineStructureVector } from '@/types';
 
+// Helper to pad a 5-element partial vector to 8 dimensions
+const v = (...vals: number[]): WineStructureVector => {
+  const out = [...vals];
+  while (out.length < 8) out.push(0);
+  return out as WineStructureVector;
+};
+
 describe('weightedDistance', () => {
   it('returns 0 for identical vectors', () => {
-    const v: WineStructureVector = [1, 2, 3, 4, 5];
-    expect(weightedDistance(v, v, DEFAULT_WEIGHTS)).toBe(0);
+    const vec: WineStructureVector = [1, 2, 3, 4, 5, 1, 2, 3];
+    expect(weightedDistance(vec, vec, DEFAULT_WEIGHTS)).toBe(0);
   });
 
   it('computes Euclidean distance for unit weights', () => {
-    const a: WineStructureVector = [0, 0, 0, 0, 0];
-    const b: WineStructureVector = [1, 0, 0, 0, 0];
+    const a = v(0, 0, 0, 0, 0);
+    const b = v(1, 0, 0, 0, 0);
     expect(weightedDistance(a, b, DEFAULT_WEIGHTS)).toBeCloseTo(1);
   });
 
   it('applies weights — heavier dimension dominates distance', () => {
-    const a: WineStructureVector = [0, 0, 0, 0, 0];
-    const b: WineStructureVector = [1, 0, 0, 0, 0]; // 1 unit in dim-0
-    const c: WineStructureVector = [0, 1, 0, 0, 0]; // 1 unit in dim-1
-    const w: [number, number, number, number, number] = [4, 1, 1, 1, 1];
+    const a = v(0, 0, 0, 0, 0);
+    const b = v(1, 0, 0, 0, 0); // 1 unit in dim-0
+    const c = v(0, 1, 0, 0, 0); // 1 unit in dim-1
+    const w: [number, number, number, number, number, number, number, number] = [4, 1, 1, 1, 1, 1, 1, 1];
     expect(weightedDistance(a, b, w)).toBeGreaterThan(weightedDistance(a, c, w));
   });
 });
@@ -32,27 +39,27 @@ describe('kmeans', () => {
 
   it('returns k=1 centroid as mean of all points', () => {
     const points: WineStructureVector[] = [
-      [0, 0, 0, 0, 0],
-      [4, 4, 4, 4, 4],
+      v(0, 0, 0, 0, 0),
+      v(4, 4, 4, 4, 4),
     ];
     const r = kmeans(points, 1);
     expect(r.centroids).toHaveLength(1);
     expect(r.assignments.every(a => a === 0)).toBe(true);
-    // Centroid should be approximately the mean
-    r.centroids[0].forEach(v => expect(v).toBeCloseTo(2));
+    // First 5 dims should be approximately the mean (2); last 3 dims were 0 in both
+    r.centroids[0].slice(0, 5).forEach(val => expect(val).toBeCloseTo(2));
   });
 
   it('assigns points to nearest centroid', () => {
     // Two clearly separated clusters
     const cluster1: WineStructureVector[] = [
-      [0, 0, 0, 0, 0],
-      [0.5, 0, 0, 0, 0],
-      [0, 0.5, 0, 0, 0],
+      v(0, 0, 0, 0, 0),
+      v(0.5, 0, 0, 0, 0),
+      v(0, 0.5, 0, 0, 0),
     ];
     const cluster2: WineStructureVector[] = [
-      [5, 5, 5, 5, 5],
-      [4.5, 5, 5, 5, 5],
-      [5, 4.5, 5, 5, 5],
+      v(5, 5, 5, 5, 5),
+      v(4.5, 5, 5, 5, 5),
+      v(5, 4.5, 5, 5, 5),
     ];
     const points = [...cluster1, ...cluster2];
     const r = kmeans(points, 2);
@@ -66,14 +73,14 @@ describe('kmeans', () => {
   });
 
   it('handles k > n by capping at n clusters', () => {
-    const points: WineStructureVector[] = [[1, 2, 3, 4, 5]];
+    const points: WineStructureVector[] = [v(1, 2, 3, 4, 5)];
     const r = kmeans(points, 10);
     expect(r.centroids).toHaveLength(1);
   });
 
   it('is deterministic with the same seed', () => {
     const points: WineStructureVector[] = Array.from({ length: 20 }, (_, i) => [
-      i % 5, (i * 2) % 5, (i + 1) % 5, i % 3, (i * 3) % 5,
+      i % 5, (i * 2) % 5, (i + 1) % 5, i % 3, (i * 3) % 5, i % 4, (i + 2) % 5, i % 2,
     ] as WineStructureVector);
     const r1 = kmeans(points, 3, DEFAULT_WEIGHTS, 100, 42);
     const r2 = kmeans(points, 3, DEFAULT_WEIGHTS, 100, 42);
