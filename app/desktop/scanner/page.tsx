@@ -13,9 +13,43 @@ import { cn } from '@/lib/utils';
 
 const WINE_TYPES: WineType[] = ['red', 'white', 'rosé', 'sparkling', 'dessert', 'fortified', 'other'];
 
+// Mirror the same resize helper used in LabelCapture.tsx
+async function resizeToWebP(source: HTMLCanvasElement, maxW: number, maxH: number, quality: number): Promise<string> {
+  const ratio = Math.min(maxW / source.width, maxH / source.height);
+  const w = Math.round(source.width * ratio);
+  const h = Math.round(source.height * ratio);
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  out.getContext('2d')!.drawImage(source, 0, 0, w, h);
+  return out.toDataURL('image/webp', quality).split(',')[1];
+}
+
 type RowStatus =
   | 'idle' | 'looking-up' | 'found' | 'not-found'
   | 'label-scanning' | 'label-found' | 'enriching' | 'saved' | 'error';
+
+interface GeminiExtras {
+  appellation?: string;
+  country?: string;
+  alcohol_content?: number;
+  average_price?: number;
+  drink_from_year?: number;
+  drink_by_year?: number;
+  description?: string;
+  acidity?: number;
+  tannin?: number;
+  alcohol?: number;
+  sweetness?: number;
+  body?: number;
+  minerality?: number;
+  oak_influence?: number;
+  fruit_intensity?: number;
+  fruit_profile?: string;
+  pairing_weight?: string;
+  pairing_rationale?: string;
+  food_pairings?: string[];
+  cuisine_tags?: string[];
+}
 
 interface ScanRow {
   id: string;
@@ -30,8 +64,10 @@ interface ScanRow {
   qty: number;
   location: string;
   wineId: string | null;
-  labelImage: string | null;
+  labelGemini: string | null;    // 400×600 @ 0.7 — sent to /api/label-scan
+  labelThumbnail: string | null; // 150×225 @ 0.35 — displayed + saved to DB
   errorMsg: string | null;
+  geminiExtras: GeminiExtras | null;
 }
 
 function blankRow(): ScanRow {
@@ -39,7 +75,8 @@ function blankRow(): ScanRow {
     id: Math.random().toString(36).slice(2),
     barcode: '', status: 'idle',
     wineName: '', producer: '', vintage: '', wineType: '', variety: '', region: '',
-    qty: 1, location: '', wineId: null, labelImage: null, errorMsg: null,
+    qty: 1, location: '', wineId: null,
+    labelGemini: null, labelThumbnail: null, errorMsg: null, geminiExtras: null,
   };
 }
 
@@ -53,7 +90,7 @@ function PortraitCameraModal({
   }, [onDetected, onClose]);
 
   const { videoRef, status, error, start, stop } = useBarcode(handleDetected);
-  const { rotation, rotateNext, videoStyle } = useCameraRotation();
+  const { rotation, rotateNext, videoStyle } = useCameraRotation('barcodeRotation');
 
   useEffect(() => {
     start();
@@ -107,18 +144,21 @@ function PortraitCameraModal({
   );
 }
 
-// ── Label capture modal (reuses existing component concept) ────────────────────
+// ── Label capture modal — mirrors LabelCapture.tsx dual-quality approach ────────
+// gemini: 400×600 @ 0.7 → Gemini API   thumbnail: 150×225 @ 0.35 → DB + display
 function LabelCaptureModal({
   onCapture, onClose,
 }: {
-  onCapture: (base64: string) => void; onClose: () => void;
+  onCapture: (gemini: string, thumbnail: string) => void; onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const guideRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
-  const { rotation, rotateNext, videoStyle } = useCameraRotation();
+  // Separate storage key from barcode camera so label defaults to 0° (hold bottle upright)
+  const { rotation, rotateNext, videoStyle } = useCameraRotation('labelRotation');
 
   useEffect(() => {
     let mounted = true;
@@ -137,24 +177,46 @@ function LabelCaptureModal({
     if (!video || !ready || processing) return;
     setProcessing(true);
     const nativeW = video.videoWidth, nativeH = video.videoHeight;
-    const swap = rotation === 90 || rotation === 270;
-    const canvas = document.createElement('canvas');
-    canvas.width = swap ? nativeH : nativeW;
-    canvas.height = swap ? nativeW : nativeH;
-    const ctx = canvas.getContext('2d')!;
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.drawImage(video, -nativeW / 2, -nativeH / 2, nativeW, nativeH);
+    let raw: HTMLCanvasElement;
 
-    const out = document.createElement('canvas');
-    const ratio = Math.min(400 / canvas.width, 600 / canvas.height);
-    out.width = Math.round(canvas.width * ratio);
-    out.height = Math.round(canvas.height * ratio);
-    out.getContext('2d')!.drawImage(canvas, 0, 0, out.width, out.height);
-    const base64 = out.toDataURL('image/webp', 0.7).split(',')[1];
-    setProcessing(false);
-    onCapture(base64);
-    onClose();
+    if (rotation === 0) {
+      // Guide-box crop — same logic as LabelCapture.tsx
+      const guide = guideRef.current;
+      if (!guide) { setProcessing(false); return; }
+      const containerRect = video.getBoundingClientRect();
+      const guideRect = guide.getBoundingClientRect();
+      const displayW = containerRect.width, displayH = containerRect.height;
+      const scale = Math.max(displayW / nativeW, displayH / nativeH);
+      const videoOffsetX = (displayW - nativeW * scale) / 2;
+      const videoOffsetY = (displayH - nativeH * scale) / 2;
+      const srcX = Math.max(0, (guideRect.left - containerRect.left - videoOffsetX) / scale);
+      const srcY = Math.max(0, (guideRect.top - containerRect.top - videoOffsetY) / scale);
+      const srcW = Math.min(nativeW - srcX, guideRect.width / scale);
+      const srcH = Math.min(nativeH - srcY, guideRect.height / scale);
+      raw = document.createElement('canvas');
+      raw.width = Math.round(srcW); raw.height = Math.round(srcH);
+      raw.getContext('2d')!.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
+    } else {
+      // Rotated full frame — same logic as LabelCapture.tsx
+      const swap = rotation === 90 || rotation === 270;
+      raw = document.createElement('canvas');
+      raw.width = swap ? nativeH : nativeW; raw.height = swap ? nativeW : nativeH;
+      const ctx = raw.getContext('2d')!;
+      ctx.translate(raw.width / 2, raw.height / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.drawImage(video, -nativeW / 2, -nativeH / 2, nativeW, nativeH);
+    }
+
+    try {
+      const [gemini, thumbnail] = await Promise.all([
+        resizeToWebP(raw, 400, 600, 0.7),   // high-res → Gemini
+        resizeToWebP(raw, 150, 225, 0.35),  // small   → DB + display
+      ]);
+      onCapture(gemini, thumbnail);
+      onClose();
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
@@ -167,16 +229,39 @@ function LabelCaptureModal({
             <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
           </div>
         </div>
-        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '9/12', maxHeight: '70vh' }}>
+        {/*
+          Laptop cameras are landscape-fixed (16:9). Hold the bottle cork-up in the center;
+          the label fills roughly the middle third of the horizontal frame. The guide box is
+          portrait-shaped (2/5 wide × 88% tall) — matching the label proportions without
+          wasting the wide FOV. On mobile the same capture logic works because the phone
+          camera stream is portrait when held portrait.
+        */}
+        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '16/9', maxHeight: '60vh' }}>
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" style={videoStyle} autoPlay muted playsInline />
           {!ready && !error && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white"><Loader2 className="h-6 w-6 animate-spin mr-2" /><span className="text-sm">Starting camera…</span></div>}
           {error && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-red-300 text-sm px-6 text-center">{error}</div>}
           {ready && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-1/2 h-[88%] border-2 border-white/80 rounded-md" />
-              <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-white/80">Align label in frame</p>
+              <div ref={guideRef} className="relative w-2/5 h-[88%]">
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-center">
+                  <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">TOP</span>
+                  <div className="w-px h-2 bg-white/60 mx-auto mt-0.5" />
+                </div>
+                <div className="w-full h-full border-2 border-white/80 rounded-md" />
+                <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-center">
+                  <div className="w-px h-2 bg-white/60 mx-auto mb-0.5" />
+                  <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">BTM</span>
+                </div>
+              </div>
             </div>
           )}
+        </div>
+        <div className="px-4 py-2 text-center">
+          <p className="text-xs text-muted-foreground">
+            {rotation === 0
+              ? 'Hold label upright · align within the frame · TOP and BTM mark the correct orientation'
+              : `Camera rotated ${rotation}° · tap the rotate button to adjust if the preview looks wrong`}
+          </p>
         </div>
         <div className="px-4 py-3 flex justify-center gap-3">
           <button onClick={capture} disabled={!ready || processing} className="flex items-center gap-2 px-6 py-2 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors">
@@ -326,18 +411,20 @@ export default function DesktopScannerPage() {
     lookupBarcode(cameraRowId, barcode);
   }, [cameraRowId, lookupBarcode]);
 
-  // After label photo captured
-  const handleLabelCapture = useCallback(async (base64: string) => {
-    if (!labelRowId) return;
-    updateRow(labelRowId, { status: 'label-scanning' });
+  // After label photo captured — gemini (400×600) → API; thumbnail (150×225) → DB + display
+  const handleLabelCapture = useCallback(async (gemini: string, thumbnail: string) => {
+    const targetRowId = labelRowId;
+    if (!targetRowId) return;
+    setLabelRowId(null);
+    updateRow(targetRowId, { status: 'label-scanning' });
     try {
       const res = await fetch('/api/label-scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64 }),
+        body: JSON.stringify({ imageBase64: gemini }),
       });
       const data = await res.json();
       if (res.ok && data.name) {
-        updateRow(labelRowId, {
+        updateRow(targetRowId, {
           status: 'label-found',
           wineName: data.name ?? '',
           producer: data.producer ?? '',
@@ -345,13 +432,36 @@ export default function DesktopScannerPage() {
           wineType: data.wine_type ?? '',
           variety: data.variety ?? '',
           region: data.region ?? '',
-          labelImage: base64,
+          labelGemini: gemini,
+          labelThumbnail: thumbnail,
+          geminiExtras: {
+            appellation: data.appellation,
+            country: data.country,
+            alcohol_content: data.alcohol_content,
+            average_price: data.average_price,
+            drink_from_year: data.drink_from_year,
+            drink_by_year: data.drink_by_year,
+            description: data.description,
+            acidity: data.acidity,
+            tannin: data.tannin,
+            alcohol: data.alcohol,
+            sweetness: data.sweetness,
+            body: data.body,
+            minerality: data.minerality,
+            oak_influence: data.oak_influence,
+            fruit_intensity: data.fruit_intensity,
+            fruit_profile: data.fruit_profile,
+            pairing_weight: data.pairing_weight,
+            pairing_rationale: data.pairing_rationale,
+            food_pairings: data.food_pairings,
+            cuisine_tags: data.cuisine_tags,
+          },
         });
       } else {
-        updateRow(labelRowId, { status: 'not-found', errorMsg: data.error ?? 'Label scan failed' });
+        updateRow(targetRowId, { status: 'not-found', errorMsg: data.error ?? 'Label scan failed', labelGemini: null, labelThumbnail: null });
       }
     } catch {
-      updateRow(labelRowId, { status: 'not-found', errorMsg: 'Label scan failed' });
+      updateRow(targetRowId, { status: 'not-found', errorMsg: 'Label scan failed', labelGemini: null, labelThumbnail: null });
     }
   }, [labelRowId, updateRow]);
 
@@ -398,7 +508,7 @@ export default function DesktopScannerPage() {
     } finally { setEnriching(false); }
   };
 
-  // Add all rows to cellar
+  // Add all rows to cellar — passes all Gemini fields and fires pairings/tags
   const handleAddToCellar = async () => {
     if (!activeProfile) return;
     const validRows = rows.filter(r => r.wineName.trim() && r.status !== 'saved');
@@ -409,35 +519,79 @@ export default function DesktopScannerPage() {
       try {
         let wineId = row.wineId;
         if (!wineId) {
+          const extras = row.geminiExtras;
           const res = await fetch('/api/wines', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              name: row.wineName.trim(), producer: row.producer || undefined,
+              name: row.wineName.trim(),
+              producer: row.producer || undefined,
               vintage_year: row.vintage ? parseInt(row.vintage) : undefined,
-              wine_type: row.wineType || undefined, variety: row.variety || undefined,
-              region: row.region || undefined, barcode: row.barcode || undefined,
+              wine_type: row.wineType || undefined,
+              variety: row.variety || undefined,
+              region: row.region || undefined,
+              barcode: row.barcode || undefined,
+              // All Gemini structural data
+              appellation: extras?.appellation,
+              country: extras?.country,
+              alcohol_content: extras?.alcohol_content,
+              average_price: extras?.average_price,
+              drink_from_year: extras?.drink_from_year,
+              drink_by_year: extras?.drink_by_year,
+              description: extras?.description,
+              acidity: extras?.acidity,
+              tannin: extras?.tannin,
+              alcohol: extras?.alcohol,
+              sweetness: extras?.sweetness,
+              body: extras?.body,
+              minerality: extras?.minerality,
+              oak_influence: extras?.oak_influence,
+              fruit_intensity: extras?.fruit_intensity,
+              fruit_profile: extras?.fruit_profile,
+              pairing_weight: extras?.pairing_weight,
+              pairing_rationale: extras?.pairing_rationale,
             }),
           });
           if (!res.ok) { results[row.id] = 'error'; continue; }
           const wine = await res.json() as Wine;
           wineId = wine.id;
-          // Save label image if available
-          if (row.labelImage && wineId) {
-            await fetch(`/api/wines/${wineId}`, {
+          // Save label thumbnail (150×225 @ 0.35) to DB — same as mobile
+          if (row.labelThumbnail && wineId) {
+            fetch(`/api/wines/${wineId}`, {
               method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ label_image: row.labelImage }),
+              body: JSON.stringify({ label_image: row.labelThumbnail }),
             }).catch(() => {});
           }
+          // Fire food pairings and cuisine tags (fire-and-forget, same as mobile scanner)
+          if (extras?.food_pairings && wineId) {
+            for (const food of extras.food_pairings) {
+              fetch(`/api/wines/${wineId}/pairings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ food }),
+              }).catch(() => {});
+            }
+          }
+          if (extras?.cuisine_tags && wineId) {
+            for (const tag of extras.cuisine_tags) {
+              fetch(`/api/wines/${wineId}/cuisine-tags`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag }),
+              }).catch(() => {});
+            }
+          }
         }
-        const cellarRes = await fetch('/api/cellar', {
+        // Use bulk endpoint so empty location (unlocated) is accepted
+        const cellarRes = await fetch('/api/cellar/bulk', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            wine_id: wineId, profile_id: activeProfile.id,
-            location: row.location || '', quantity: row.qty,
+            profile_id: activeProfile.id,
+            location: row.location || '',
+            items: [{ wine_id: wineId, quantity: row.qty }],
           }),
         });
-        results[row.id] = cellarRes.ok ? 'ok' : 'error';
-        if (cellarRes.ok) updateRow(row.id, { status: 'saved', wineId });
+        const cellarData = cellarRes.ok ? await cellarRes.json() : null;
+        const ok = cellarRes.ok && cellarData?.added > 0;
+        results[row.id] = ok ? 'ok' : 'error';
+        if (ok) updateRow(row.id, { status: 'saved', wineId });
       } catch { results[row.id] = 'error'; }
     }
     setSaveResults(results); setSaving(false);
@@ -510,6 +664,7 @@ export default function DesktopScannerPage() {
               <tr>
                 <th className="px-2 py-2 text-left font-medium text-muted-foreground uppercase tracking-wide w-8">#</th>
                 <th className="px-2 py-2 text-left font-medium text-muted-foreground uppercase tracking-wide w-32">Barcode</th>
+                <th className="px-2 py-2 text-left font-medium text-muted-foreground uppercase tracking-wide w-16">Label</th>
                 <th className="px-2 py-2 text-left font-medium text-muted-foreground uppercase tracking-wide w-24">Status</th>
                 <th className="px-2 py-2 text-left font-medium text-muted-foreground uppercase tracking-wide min-w-[180px]">Wine Name</th>
                 <th className="px-2 py-2 text-left font-medium text-muted-foreground uppercase tracking-wide w-36">Producer</th>
@@ -551,16 +706,29 @@ export default function DesktopScannerPage() {
                       </div>
                     </td>
 
+                    {/* Label — shows thumbnail (150×225) or camera button; available for every row */}
+                    <td className="px-2 py-1.5">
+                      {row.labelThumbnail ? (
+                        <button onClick={() => !isSaved && setLabelRowId(row.id)} title="Re-scan label" className="block">
+                          <img src={`data:image/webp;base64,${row.labelThumbnail}`} alt="Label" className="w-10 h-12 object-cover rounded border" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setLabelRowId(row.id)}
+                          disabled={isSaved}
+                          title="Scan label with Gemini AI"
+                          className="h-10 w-10 flex items-center justify-center rounded border text-muted-foreground hover:text-primary hover:bg-accent transition-colors disabled:opacity-40"
+                        >
+                          <Camera className="h-4 w-4" />
+                        </button>
+                      )}
+                    </td>
+
                     {/* Status */}
                     <td className="px-2 py-1.5">
                       <span className={cn('text-xs', badge.cls)}>
                         {isLookingUp ? <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />{badge.label}</span> : badge.label}
                       </span>
-                      {row.status === 'not-found' && (
-                        <button onClick={() => setLabelRowId(row.id)} className="text-xs text-primary hover:underline block mt-0.5 whitespace-nowrap">
-                          Scan label
-                        </button>
-                      )}
                       {row.errorMsg && <p className="text-xs text-destructive">{row.errorMsg}</p>}
                       {saveResults[row.id] === 'error' && <p className="text-xs text-destructive">Save failed</p>}
                     </td>
