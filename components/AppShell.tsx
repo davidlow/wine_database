@@ -21,7 +21,7 @@ const STANDARD_LINKS: NavLink[] = [
   { href: '/wines', label: 'Wines', Icon: Wine },
   { href: '/producers', label: 'Producers', Icon: Building2 },
   { href: '/scanner', label: 'Scanner', Icon: ScanLine },
-  { href: '/cellar', label: 'Cellar', Icon: Archive },
+  { href: '/profiles', label: 'Cellar', Icon: Archive, desktopCellar: true },
   { href: '/defragment', label: 'Defragment', Icon: Shuffle },
   { href: '/food-pairings', label: 'Food Pairings', Icon: UtensilsCrossed },
   { href: '/freezer', label: 'Freezer', Icon: Snowflake },
@@ -30,7 +30,7 @@ const STANDARD_LINKS: NavLink[] = [
 ];
 
 const DESKTOP_LINKS: NavLink[] = [
-  { href: '/profiles', label: 'Desktop Cellar', Icon: Layers, desktopCellar: true },
+  { href: '/cellar', label: 'Desktop Cellar', Icon: Layers },
   { href: '/desktop/scanner', label: 'Desktop Scanner', Icon: ScanLine },
   { href: '/desktop/wines', label: 'Desktop Wines', Icon: Wine },
   { href: '/desktop/defragment', label: 'Desktop Defrag', Icon: Shuffle },

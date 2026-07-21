@@ -64,6 +64,10 @@ export default function CellarPage() {
 
   const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 192;
+    return Number(localStorage.getItem('cellarSidebarWidth') || 192);
+  });
 
   const loadLocations = useCallback(async () => {
     if (!profileId) return;
@@ -218,12 +222,13 @@ export default function CellarPage() {
     children: SidebarNode[];
     locations: Location[];
     totalCount: number;
+    totalCapacity: number | null;
   }
 
   const sidebarTree = useMemo((): SidebarNode[] => {
     const nodeMap = new Map<string, SidebarNode>();
     for (const g of locationGroups) {
-      nodeMap.set(g.id, { group: g, children: [], locations: [], totalCount: 0 });
+      nodeMap.set(g.id, { group: g, children: [], locations: [], totalCount: 0, totalCapacity: null });
     }
     const roots: SidebarNode[] = [];
     for (const g of locationGroups) {
@@ -246,10 +251,16 @@ export default function CellarPage() {
     }
     roots.sort((a, b) => a.group.sort_order - b.group.sort_order || a.group.name.localeCompare(b.group.name));
     roots.forEach(sortNode);
-    function computeTotals(n: SidebarNode): number {
+    function computeTotals(n: SidebarNode): void {
+      n.children.forEach(computeTotals);
       n.totalCount = n.locations.reduce((s, l) => s + (l.current_quantity ?? 0), 0)
-        + n.children.reduce((s, c) => s + computeTotals(c), 0);
-      return n.totalCount;
+        + n.children.reduce((s, c) => s + c.totalCount, 0);
+      const hasCap = n.locations.some(l => l.max_capacity != null)
+        || n.children.some(c => c.totalCapacity != null);
+      n.totalCapacity = hasCap
+        ? n.locations.reduce((s, l) => s + (l.max_capacity ?? 0), 0)
+          + n.children.reduce((s, c) => s + (c.totalCapacity ?? 0), 0)
+        : null;
     }
     roots.forEach(computeTotals);
     return roots;
@@ -289,7 +300,9 @@ export default function CellarPage() {
             : <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary/60" />
           }
           <span className="flex-1 truncate font-medium">{node.group.name}</span>
-          <span className="opacity-60 shrink-0 tabular-nums">{node.totalCount}</span>
+          <span className="opacity-60 shrink-0 tabular-nums">
+            {node.totalCount}{node.totalCapacity != null ? `/${node.totalCapacity}` : ''}
+          </span>
         </button>
         {!isCollapsed && (
           <div>
@@ -310,7 +323,7 @@ export default function CellarPage() {
                 >
                   <span className="truncate flex-1">{loc.name}</span>
                   <span className={cn('shrink-0 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
-                    {loc.current_quantity ?? 0}
+                    {loc.current_quantity ?? 0}{loc.max_capacity != null ? `/${loc.max_capacity}` : ''}
                   </span>
                 </button>
               );
@@ -332,7 +345,10 @@ export default function CellarPage() {
   return (
     <div className="flex h-full min-h-0">
       {/* Sidebar */}
-      <aside className="w-48 shrink-0 border-r bg-card overflow-y-auto hidden sm:flex flex-col">
+      <aside
+        className="shrink-0 border-r bg-card overflow-y-auto hidden sm:flex flex-col"
+        style={{ width: sidebarWidth }}
+      >
         <div className="px-3 py-3 border-b">
           <h2 className="text-sm font-semibold flex items-center gap-2">
             <Archive className="h-4 w-4 text-primary" />
@@ -386,7 +402,7 @@ export default function CellarPage() {
                       >
                         <span className="truncate flex-1">{loc.name}</span>
                         <span className={cn('text-xs shrink-0 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
-                          {loc.current_quantity ?? 0}
+                          {loc.current_quantity ?? 0}{loc.max_capacity != null ? `/${loc.max_capacity}` : ''}
                         </span>
                       </button>
                     );
@@ -427,6 +443,27 @@ export default function CellarPage() {
           </>
         )}
       </aside>
+
+      {/* Drag handle */}
+      <div
+        className="w-1 cursor-col-resize bg-border hover:bg-primary/40 active:bg-primary/60 shrink-0 hidden sm:block"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          const startX = e.clientX;
+          const startWidth = sidebarWidth;
+          const onMove = (ev: MouseEvent) => {
+            const next = Math.min(400, Math.max(120, startWidth + ev.clientX - startX));
+            setSidebarWidth(next);
+            try { localStorage.setItem('cellarSidebarWidth', String(next)); } catch {}
+          };
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        }}
+      />
 
       {/* Main panel */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">

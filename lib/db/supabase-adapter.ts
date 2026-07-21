@@ -367,10 +367,23 @@ export const supabaseAdapter: DbAdapter = {
   // --- Locations ---
 
   async getLocations(profileId: string): Promise<Location[]> {
-    const { data, error } = await getSupabaseAdmin()
-      .from('locations').select('*').eq('profile_id', profileId).order('name');
-    if (error) throw error;
-    return (data as Location[]).map(loc => ({ ...loc }));
+    const [locResult, invResult] = await Promise.all([
+      getSupabaseAdmin().from('locations').select('*').eq('profile_id', profileId).order('name'),
+      getSupabaseAdmin().from('cellar_inventory').select('location, quantity').eq('profile_id', profileId),
+    ]);
+    if (locResult.error) throw locResult.error;
+    const counts = new Map<string, number>();
+    for (const row of (invResult.data ?? [])) {
+      counts.set(row.location, (counts.get(row.location) ?? 0) + (row.quantity ?? 0));
+    }
+    return (locResult.data ?? []).map(loc => {
+      const current = counts.get(loc.name) ?? 0;
+      return {
+        ...loc,
+        current_quantity: current,
+        available_capacity: loc.max_capacity != null ? loc.max_capacity - current : null,
+      } as Location;
+    });
   },
 
   async createLocation(data): Promise<Location> {

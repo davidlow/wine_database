@@ -15,7 +15,7 @@ interface EditState {
 }
 
 export default function ProfilesPage() {
-  const { profiles, refresh } = useProfile();
+  const { profiles, refresh, loading: profilesLoading, error: profilesLoadError } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -189,7 +189,21 @@ export default function ProfilesPage() {
       )}
 
       <div className="space-y-4">
-        {ownedProfiles.length === 0 && sharedProfiles.length === 0 ? (
+        {profilesLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : profilesLoadError && ownedProfiles.length === 0 && sharedProfiles.length === 0 ? (
+          <div className="text-center py-12 space-y-3">
+            <p className="text-sm text-destructive">{profilesLoadError}</p>
+            <button
+              onClick={() => refresh()}
+              className="px-4 py-2 rounded-md border text-sm hover:bg-accent transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        ) : ownedProfiles.length === 0 && sharedProfiles.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No cellars yet. Create one above.</p>
         ) : (
           <>
