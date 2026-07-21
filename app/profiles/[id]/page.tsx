@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Check, ChevronDown, ChevronRight, Edit2,
   Loader2, MapPin, PackagePlus, Plus, Share2, SkipForward, Trash2, Wrench, Wine, X,
 } from 'lucide-react';
-import type { CellarInventory, Location, Profile, BottleTransaction } from '@/types';
+import type { CellarInventory, Location, LocationGroup, Profile, BottleTransaction } from '@/types';
 import SharePanel from '@/components/SharePanel';
 import { useProfile } from '@/hooks/useProfile';
 import TransactionLog from '@/components/TransactionLog';
@@ -14,6 +14,14 @@ import { cn, drinkWindowStatus } from '@/lib/utils';
 
 // Virtual locations are derived from inventory but have no locations-table record.
 type DisplayLocation = Location & { virtual?: true };
+
+// Hierarchy tree node used in the Locations tab.
+interface HierarchyNode extends LocationGroup {
+  children: HierarchyNode[];
+  locations: DisplayLocation[];
+  totalBottles: number;
+  totalCap: number | null;
+}
 
 // ── Capacity bar ──────────────────────────────────────────────────────────────
 function CapacityBar({ used, max }: { used: number; max: number }) {
@@ -418,6 +426,67 @@ function RegisterMissingWizard({
   );
 }
 
+// ── Hierarchy group section (recursive) ──────────────────────────────────────
+function HierarchyNodeSection({ node, depth, collapsedGroups, onToggle, renderLocation }: {
+  node: HierarchyNode;
+  depth: number;
+  collapsedGroups: Set<string>;
+  onToggle: (id: string) => void;
+  renderLocation: (loc: DisplayLocation) => React.ReactNode;
+}) {
+  const isCollapsed = collapsedGroups.has(node.id);
+  const hasContent = node.children.length > 0 || node.locations.length > 0;
+  return (
+    <div className={depth > 0 ? 'pl-4' : ''}>
+      <button
+        onClick={() => { if (hasContent) onToggle(node.id); }}
+        className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted/40 hover:bg-muted/70 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {hasContent
+            ? isCollapsed
+              ? <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            : <span className="w-4 inline-block" />
+          }
+          <span className="text-sm font-semibold">{node.name}</span>
+          {node.locations.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {node.locations.length} location{node.locations.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {node.totalCap != null ? (
+            <CapacityBar used={node.totalBottles} max={node.totalCap} />
+          ) : (
+            <span className="text-xs text-muted-foreground tabular-nums">{node.totalBottles} btl</span>
+          )}
+        </div>
+      </button>
+      {!isCollapsed && hasContent && (
+        <div className="mt-1 space-y-1">
+          {node.children.map(child => (
+            <HierarchyNodeSection
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              collapsedGroups={collapsedGroups}
+              onToggle={onToggle}
+              renderLocation={renderLocation}
+            />
+          ))}
+          {node.locations.length > 0 && (
+            <div className={cn('space-y-1.5', node.children.length > 0 && 'pt-1')}>
+              {node.locations.map(loc => renderLocation(loc))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Location link helper ──────────────────────────────────────────────────────
 function LocationLink({ profileId, locationName, className }: { profileId: string; locationName: string; className?: string }) {
   if (!locationName) return <span className={cn('italic text-amber-600', className)}>Unlocated</span>;
@@ -452,14 +521,17 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
   const [deleteLocId, setDeleteLocId] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [locError, setLocError] = useState<string | null>(null);
+  const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
+  const [collapsedHierarchyGroups, setCollapsedHierarchyGroups] = useState<Set<string>>(new Set());
 
   const loadAll = async () => {
     try {
-      const [profileRes, inventoryRes, locRes, txRes] = await Promise.all([
+      const [profileRes, inventoryRes, locRes, txRes, grpRes] = await Promise.all([
         fetch(`/api/profiles/${id}`),
         fetch(`/api/cellar?profile_id=${id}`),
         fetch(`/api/locations?profile_id=${id}`),
         fetch(`/api/transactions?profile_id=${id}`),
+        fetch(`/api/location-groups?profile_id=${id}`),
       ]);
       if (profileRes.ok) setProfile(await profileRes.json());
       if (inventoryRes.ok) setInventory(await inventoryRes.json());
@@ -469,6 +541,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
         const groups = new Set(locs.map(l => l.group_name).filter(Boolean) as string[]);
         setExpandedGroups(groups);
       }
+      if (grpRes.ok) setLocationGroups(await grpRes.json());
       if (txRes.ok) setTransactions(await txRes.json());
     } finally {
       setLoading(false);
@@ -620,6 +693,58 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
       return next;
     });
   };
+
+  const toggleHierarchyGroup = (id: string) => {
+    setCollapsedHierarchyGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  function buildHierarchyTree(): HierarchyNode[] {
+    const nodeMap = new Map<string, HierarchyNode>();
+    for (const g of locationGroups) {
+      nodeMap.set(g.id, { ...g, children: [], locations: [], totalBottles: 0, totalCap: 0 });
+    }
+    const roots: HierarchyNode[] = [];
+    for (const g of locationGroups) {
+      const node = nodeMap.get(g.id)!;
+      if (g.parent_id && nodeMap.has(g.parent_id)) {
+        nodeMap.get(g.parent_id)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    for (const loc of allLocations) {
+      if (loc.hierarchy_group_id && nodeMap.has(loc.hierarchy_group_id)) {
+        nodeMap.get(loc.hierarchy_group_id)!.locations.push(loc);
+      }
+    }
+    function sortAndTotal(node: HierarchyNode): { bottles: number; cap: number | null } {
+      node.children.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+      node.locations.sort((a, b) => a.name.localeCompare(b.name));
+      node.children.forEach(c => sortAndTotal(c));
+      const locBottles = node.locations.reduce((s, l) => s + (l.current_quantity ?? 0), 0);
+      const childBottles = node.children.reduce((s, c) => s + c.totalBottles, 0);
+      node.totalBottles = locBottles + childBottles;
+      const locCap = node.locations.every(l => l.max_capacity != null)
+        ? node.locations.reduce((s, l) => s + (l.max_capacity ?? 0), 0)
+        : null;
+      const childCap = node.children.every(c => c.totalCap != null)
+        ? node.children.reduce((s, c) => s + (c.totalCap ?? 0), 0)
+        : null;
+      node.totalCap = locCap != null && childCap != null ? locCap + childCap : null;
+      return { bottles: node.totalBottles, cap: node.totalCap };
+    }
+    roots.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    roots.forEach(sortAndTotal);
+    return roots;
+  }
+
+  const hierarchyTree = locationGroups.length > 0 ? buildHierarchyTree() : [];
+  const hierarchyAssignedIds = new Set(allLocations.filter(l => l.hierarchy_group_id).map(l => l.id));
+  const hierarchyUngrouped = allLocations.filter(l => !hierarchyAssignedIds.has(l.id));
 
   // ── Location row ────────────────────────────────────────────────────────────
   const currentYear = new Date().getFullYear();
@@ -930,48 +1055,67 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
               </div>
             )}
 
-            {/* Grouped location list */}
-            {groups.map(group => {
-              const isNamed = group.groupName !== null;
-              const isExpanded = !isNamed || expandedGroups.has(group.groupName!);
-
-              return (
-                <div key={group.groupName ?? '__ungrouped__'} className="space-y-1.5">
-                  {isNamed && (
-                    <button
-                      onClick={() => toggleGroup(group.groupName!)}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted/40 hover:bg-muted/70 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        {isExpanded
-                          ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                          : <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        }
-                        <span className="text-sm font-semibold">{group.groupName}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {group.locations.length} location{group.locations.length !== 1 ? 's' : ''}
-                        </span>
+            {/* Location list — hierarchy view when groups exist, group_name fallback otherwise */}
+            {hierarchyTree.length > 0 ? (
+              <div className="space-y-1">
+                {hierarchyTree.map(node => (
+                  <HierarchyNodeSection
+                    key={node.id}
+                    node={node}
+                    depth={0}
+                    collapsedGroups={collapsedHierarchyGroups}
+                    onToggle={toggleHierarchyGroup}
+                    renderLocation={(loc) => <LocationRow key={loc.id} loc={loc} />}
+                  />
+                ))}
+                {hierarchyUngrouped.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-xs text-muted-foreground px-1">Ungrouped</p>
+                    {hierarchyUngrouped.map(loc => <LocationRow key={loc.id} loc={loc} />)}
+                  </div>
+                )}
+              </div>
+            ) : (
+              groups.map(group => {
+                const isNamed = group.groupName !== null;
+                const isExpanded = !isNamed || expandedGroups.has(group.groupName!);
+                return (
+                  <div key={group.groupName ?? '__ungrouped__'} className="space-y-1.5">
+                    {isNamed && (
+                      <button
+                        onClick={() => toggleGroup(group.groupName!)}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted/40 hover:bg-muted/70 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isExpanded
+                            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          }
+                          <span className="text-sm font-semibold">{group.groupName}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {group.locations.length} location{group.locations.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {group.totalCapacity != null ? (
+                            <CapacityBar used={group.totalCurrent} max={group.totalCapacity} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{group.totalCurrent} btl</span>
+                          )}
+                        </div>
+                      </button>
+                    )}
+                    {isExpanded && (
+                      <div className={cn('space-y-1.5', isNamed && 'pl-4')}>
+                        {group.locations.map(loc => (
+                          <LocationRow key={loc.id} loc={loc} />
+                        ))}
                       </div>
-                      <div className="flex items-center gap-2">
-                        {group.totalCapacity != null ? (
-                          <CapacityBar used={group.totalCurrent} max={group.totalCapacity} />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{group.totalCurrent} btl</span>
-                        )}
-                      </div>
-                    </button>
-                  )}
-
-                  {isExpanded && (
-                    <div className={cn('space-y-1.5', isNamed && 'pl-4')}>
-                      {group.locations.map(loc => (
-                        <LocationRow key={loc.id} loc={loc} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    )}
+                  </div>
+                );
+              })
+            )}
 
             {/* Add / Bulk actions */}
             {canWrite && (showAddForm ? (

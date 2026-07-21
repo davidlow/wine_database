@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import {
   Search, MoveRight, Archive, CheckSquare, Square, AlertTriangle,
-  SortAsc, ChevronRight, Loader2,
+  SortAsc, ChevronRight, ChevronDown, Loader2, Folder, FolderOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { CellarInventory, Location } from '@/types';
+import type { CellarInventory, Location, LocationGroup } from '@/types';
 import BottleMover from '@/components/BottleMover';
 
 type SortMode = 'name' | 'date' | 'drink';
@@ -62,15 +62,20 @@ export default function CellarPage() {
   const [moverWine, setMoverWine] = useState<{ wineId: string; wineName: string } | null>(null);
   const [miscWarning, setMiscWarning] = useState<MiscWarning | null>(null);
 
+  const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
   const loadLocations = useCallback(async () => {
     if (!profileId) return;
     setLoadingLoc(true);
     try {
-      const [locRes, invRes] = await Promise.all([
+      const [locRes, invRes, grpRes] = await Promise.all([
         fetch(`/api/locations?profile_id=${profileId}`),
         fetch(`/api/cellar?profile_id=${profileId}&location=`),
+        fetch(`/api/location-groups?profile_id=${profileId}`),
       ]);
       if (locRes.ok) setLocations(await locRes.json());
+      if (grpRes.ok) setLocationGroups(await grpRes.json());
       if (invRes.ok) {
         const inv: CellarInventory[] = await invRes.json();
         const total = inv.reduce((s, i) => s + i.quantity, 0);
@@ -208,6 +213,114 @@ export default function CellarPage() {
     ...locations.map(l => ({ loc: l, count: l.current_quantity ?? 0 })),
   ];
 
+  interface SidebarNode {
+    group: LocationGroup;
+    children: SidebarNode[];
+    locations: Location[];
+    totalCount: number;
+  }
+
+  const sidebarTree = useMemo((): SidebarNode[] => {
+    const nodeMap = new Map<string, SidebarNode>();
+    for (const g of locationGroups) {
+      nodeMap.set(g.id, { group: g, children: [], locations: [], totalCount: 0 });
+    }
+    const roots: SidebarNode[] = [];
+    for (const g of locationGroups) {
+      const node = nodeMap.get(g.id)!;
+      if (g.parent_id && nodeMap.has(g.parent_id)) {
+        nodeMap.get(g.parent_id)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    for (const loc of locations) {
+      if (loc.hierarchy_group_id && nodeMap.has(loc.hierarchy_group_id)) {
+        nodeMap.get(loc.hierarchy_group_id)!.locations.push(loc);
+      }
+    }
+    function sortNode(n: SidebarNode) {
+      n.children.sort((a, b) => a.group.sort_order - b.group.sort_order || a.group.name.localeCompare(b.group.name));
+      n.locations.sort((a, b) => a.name.localeCompare(b.name));
+      n.children.forEach(sortNode);
+    }
+    roots.sort((a, b) => a.group.sort_order - b.group.sort_order || a.group.name.localeCompare(b.group.name));
+    roots.forEach(sortNode);
+    function computeTotals(n: SidebarNode): number {
+      n.totalCount = n.locations.reduce((s, l) => s + (l.current_quantity ?? 0), 0)
+        + n.children.reduce((s, c) => s + computeTotals(c), 0);
+      return n.totalCount;
+    }
+    roots.forEach(computeTotals);
+    return roots;
+  }, [locationGroups, locations]);
+
+  const ungroupedLocations = useMemo(
+    () => locations.filter(l => !l.hierarchy_group_id),
+    [locations]
+  );
+
+  function renderSidebarNode(node: SidebarNode, depth: number): React.ReactNode {
+    const isCollapsed = collapsedGroups.has(node.group.id);
+    const hasContent = node.children.length > 0 || node.locations.length > 0;
+    const pl = 8 + depth * 12;
+    return (
+      <div key={node.group.id}>
+        <button
+          onClick={() => {
+            if (!hasContent) return;
+            setCollapsedGroups(prev => {
+              const next = new Set(prev);
+              if (next.has(node.group.id)) next.delete(node.group.id); else next.add(node.group.id);
+              return next;
+            });
+          }}
+          className="w-full text-left py-1.5 pr-2 rounded-md text-xs transition-colors flex items-center gap-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          style={{ paddingLeft: `${pl}px` }}
+        >
+          {hasContent
+            ? isCollapsed
+              ? <ChevronRight className="h-3 w-3 shrink-0" />
+              : <ChevronDown className="h-3 w-3 shrink-0" />
+            : <span className="w-3 inline-block shrink-0" />
+          }
+          {isCollapsed
+            ? <Folder className="h-3.5 w-3.5 shrink-0 text-primary/60" />
+            : <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary/60" />
+          }
+          <span className="flex-1 truncate font-medium">{node.group.name}</span>
+          <span className="opacity-60 shrink-0 tabular-nums">{node.totalCount}</span>
+        </button>
+        {!isCollapsed && (
+          <div>
+            {node.children.map(child => renderSidebarNode(child, depth + 1))}
+            {node.locations.map(loc => {
+              const active = selectedLoc?.id === loc.id;
+              return (
+                <button
+                  key={loc.id}
+                  onClick={() => handleSelectLoc(loc)}
+                  className={cn(
+                    'w-full text-left py-1.5 pr-2.5 rounded-md text-xs transition-colors flex items-center justify-between gap-1',
+                    active
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )}
+                  style={{ paddingLeft: `${pl + 20}px` }}
+                >
+                  <span className="truncate flex-1">{loc.name}</span>
+                  <span className={cn('shrink-0 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
+                    {loc.current_quantity ?? 0}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (!profileId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -233,13 +346,12 @@ export default function CellarPage() {
         ) : (
           <>
             <nav className="px-2 py-2 space-y-0.5">
-              {sidebarItems.map(({ loc, count, isVirtual }) => {
-                const active = selectedLoc?.id === loc.id;
-                const badge = loc.location_type ? LOC_TYPE_BADGE[loc.location_type] : undefined;
+              {/* Unlocated — always at top */}
+              {(() => {
+                const active = selectedLoc?.id === UNLOCATED.id;
                 return (
                   <button
-                    key={loc.id}
-                    onClick={() => handleSelectLoc(loc)}
+                    onClick={() => handleSelectLoc(UNLOCATED)}
                     className={cn(
                       'w-full text-left px-2.5 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-1',
                       active
@@ -247,23 +359,69 @@ export default function CellarPage() {
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                     )}
                   >
-                    <span className="truncate flex-1">
-                      {isVirtual ? 'Unlocated' : loc.name}
-                    </span>
-                    <span className={cn('text-xs shrink-0', active ? 'opacity-80' : 'opacity-60')}>
-                      {count}
+                    <span className="truncate flex-1">Unlocated</span>
+                    <span className={cn('text-xs shrink-0 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
+                      {unlocatedCount}
                     </span>
                   </button>
                 );
-                void badge; // badge shown only in main panel for now
-              })}
+              })()}
+
+              {/* Hierarchy tree */}
+              {sidebarTree.length > 0 ? (
+                <>
+                  {sidebarTree.map(node => renderSidebarNode(node, 0))}
+                  {ungroupedLocations.map(loc => {
+                    const active = selectedLoc?.id === loc.id;
+                    return (
+                      <button
+                        key={loc.id}
+                        onClick={() => handleSelectLoc(loc)}
+                        className={cn(
+                          'w-full text-left px-2.5 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-1',
+                          active
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                        )}
+                      >
+                        <span className="truncate flex-1">{loc.name}</span>
+                        <span className={cn('text-xs shrink-0 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
+                          {loc.current_quantity ?? 0}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </>
+              ) : (
+                /* Fallback flat list when no hierarchy groups defined */
+                locations.map(loc => {
+                  const active = selectedLoc?.id === loc.id;
+                  return (
+                    <button
+                      key={loc.id}
+                      onClick={() => handleSelectLoc(loc)}
+                      className={cn(
+                        'w-full text-left px-2.5 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-1',
+                        active
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      )}
+                    >
+                      <span className="truncate flex-1">{loc.name}</span>
+                      <span className={cn('text-xs shrink-0 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
+                        {loc.current_quantity ?? 0}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </nav>
             <div className="px-3 pb-3 pt-1 border-t">
               <a
                 href="/cellar/hierarchy"
                 className="block text-xs text-muted-foreground hover:text-primary transition-colors"
               >
-                Proximity Groups →
+                Edit Groups →
               </a>
             </div>
           </>
