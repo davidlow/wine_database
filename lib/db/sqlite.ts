@@ -77,11 +77,13 @@ function openDb(resolvedPath: string): Database.Database {
   return conn;
 }
 
-// In dev mode, re-run migrations on the existing connection whenever this module is
-// re-evaluated (hot reload). This ensures newly-added ALTER TABLE statements execute
-// on the live connection without closing and reopening it — closing mid-flight would
+// In dev mode, re-apply the full schema + migrations on the existing connection
+// whenever this module is re-evaluated (hot reload). Using the same sequence as
+// openDb() ensures new tables (location_groups, wine_cuisine_tags, etc.) are created
+// and new columns are added on the live connection — without closing it, which would
 // break any in-progress requests still holding a reference to the old handle.
 if (process.env.NODE_ENV !== 'production' && g.__wineSqliteDb) {
+  g.__wineSqliteDb.exec(SCHEMA);
   runMigrations(g.__wineSqliteDb);
 }
 

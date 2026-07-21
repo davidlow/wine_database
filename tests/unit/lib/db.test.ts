@@ -1219,6 +1219,257 @@ describe('Location CRUD', () => {
     expect(locs2.every(l => l.profile_id === profile2.id)).toBe(true);
     expect(locs1.some(l => l.name === 'Other Rack')).toBe(false);
   });
+
+  it('location_type defaults to standard when omitted', async () => {
+    const loc = await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Default Type Rack' });
+    expect(loc.location_type).toBe('standard');
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    const found = locs.find(l => l.id === loc.id);
+    expect(found!.location_type).toBe('standard');
+  });
+
+  it('creates location with standard type', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Standard Rack',
+      location_type: 'standard',
+    });
+    expect(loc.location_type).toBe('standard');
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    expect(locs.find(l => l.id === loc.id)!.location_type).toBe('standard');
+  });
+
+  it('creates location with aging type', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Aging Cave',
+      location_type: 'aging',
+    });
+    expect(loc.location_type).toBe('aging');
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    expect(locs.find(l => l.id === loc.id)!.location_type).toBe('aging');
+  });
+
+  it('creates location with daily type', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Daily Drinkers',
+      location_type: 'daily',
+    });
+    expect(loc.location_type).toBe('daily');
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    expect(locs.find(l => l.id === loc.id)!.location_type).toBe('daily');
+  });
+
+  it('updates location_type from standard to aging', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Type Change Rack',
+      location_type: 'standard',
+    });
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, { location_type: 'aging' });
+    expect(updated.location_type).toBe('aging');
+
+    const locs = await sqliteAdapter.getLocations(profileId);
+    expect(locs.find(l => l.id === loc.id)!.location_type).toBe('aging');
+  });
+
+  it('updates location_type to daily and preserves other fields', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Mixed Update Rack',
+      max_capacity: 12,
+      group_name: 'Kitchen',
+      location_type: 'standard',
+    });
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, { location_type: 'daily' });
+    expect(updated.location_type).toBe('daily');
+    expect(updated.name).toBe('Mixed Update Rack');
+    expect(updated.max_capacity).toBe(12);
+    expect(updated.group_name).toBe('Kitchen');
+  });
+
+  it('updates max_capacity without changing location_type', async () => {
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Capacity Update Rack',
+      location_type: 'aging',
+      max_capacity: 6,
+    });
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, { max_capacity: 48 });
+    expect(updated.max_capacity).toBe(48);
+    expect(updated.location_type).toBe('aging');
+  });
+});
+
+// ─── Location Groups ─────────────────────────────────────────────────────────
+
+describe('Location Groups', () => {
+  const userId = 'loc-group-test-user';
+  let profileId: string;
+
+  beforeEach(async () => {
+    closeSqliteDb();
+    const profile = await sqliteAdapter.createProfile({ user_id: userId, name: 'Group Test Cellar' });
+    profileId = profile.id;
+  });
+
+  it('creates and retrieves a location group', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Left Wall',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    expect(group.id).toBeDefined();
+    expect(group.name).toBe('Left Wall');
+    expect(group.profile_id).toBe(profileId);
+    expect(group.parent_id).toBeNull();
+
+    const groups = await sqliteAdapter.getLocationGroups(profileId);
+    expect(groups.some(g => g.id === group.id)).toBe(true);
+  });
+
+  it('creates nested location groups (parent/child)', async () => {
+    const parent = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Section A',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    const child = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Sub-section A1',
+      parent_id: parent.id,
+      sort_order: 0,
+    });
+
+    expect(child.parent_id).toBe(parent.id);
+    const groups = await sqliteAdapter.getLocationGroups(profileId);
+    const foundChild = groups.find(g => g.id === child.id);
+    expect(foundChild!.parent_id).toBe(parent.id);
+  });
+
+  it('getLocationGroupById returns a group by id', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Named Group',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    const found = await sqliteAdapter.getLocationGroupById(group.id);
+    expect(found).not.toBeNull();
+    expect(found!.name).toBe('Named Group');
+  });
+
+  it('getLocationGroupById returns null for unknown id', async () => {
+    const result = await sqliteAdapter.getLocationGroupById('nonexistent');
+    expect(result).toBeNull();
+  });
+
+  it('updates a location group name', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Old Group Name',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    const updated = await sqliteAdapter.updateLocationGroup(group.id, { name: 'New Group Name' });
+    expect(updated.name).toBe('New Group Name');
+
+    const found = await sqliteAdapter.getLocationGroupById(group.id);
+    expect(found!.name).toBe('New Group Name');
+  });
+
+  it('deletes a location group', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Delete Me Group',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    await sqliteAdapter.deleteLocationGroup(group.id);
+
+    const groups = await sqliteAdapter.getLocationGroups(profileId);
+    expect(groups.find(g => g.id === group.id)).toBeUndefined();
+  });
+
+  it('deleting a group sets hierarchy_group_id to null on its locations (ON DELETE SET NULL)', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Group To Delete',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Assigned Rack',
+      hierarchy_group_id: group.id,
+    });
+
+    await sqliteAdapter.deleteLocationGroup(group.id);
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, { name: 'Assigned Rack' });
+    expect(updated.hierarchy_group_id == null).toBe(true);
+  });
+
+  it('location groups are isolated per profile', async () => {
+    const profile2 = await sqliteAdapter.createProfile({ user_id: userId, name: 'Other Profile' });
+
+    await sqliteAdapter.createLocationGroup({ profile_id: profileId, name: 'Mine', parent_id: null, sort_order: 0 });
+    await sqliteAdapter.createLocationGroup({ profile_id: profile2.id, name: 'Theirs', parent_id: null, sort_order: 0 });
+
+    const groups1 = await sqliteAdapter.getLocationGroups(profileId);
+    const groups2 = await sqliteAdapter.getLocationGroups(profile2.id);
+
+    expect(groups1.some(g => g.name === 'Theirs')).toBe(false);
+    expect(groups2.some(g => g.name === 'Mine')).toBe(false);
+  });
+
+  it('creates a location with hierarchy_group_id and retrieves it', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'Walk Group',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    const loc = await sqliteAdapter.createLocation({
+      profile_id: profileId,
+      name: 'Walk Rack',
+      hierarchy_group_id: group.id,
+    });
+
+    expect(loc.hierarchy_group_id).toBe(group.id);
+  });
+
+  it('updates hierarchy_group_id on a location', async () => {
+    const group = await sqliteAdapter.createLocationGroup({
+      profile_id: profileId,
+      name: 'New Group',
+      parent_id: null,
+      sort_order: 0,
+    });
+
+    const loc = await sqliteAdapter.createLocation({ profile_id: profileId, name: 'Reassign Rack' });
+    expect(loc.hierarchy_group_id == null).toBe(true);
+
+    const updated = await sqliteAdapter.updateLocation(loc.id, { hierarchy_group_id: group.id });
+    expect(updated.hierarchy_group_id).toBe(group.id);
+  });
 });
 
 // ─── Unlocated bottles ───────────────────────────────────────────────────────
