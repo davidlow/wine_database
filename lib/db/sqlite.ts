@@ -29,13 +29,18 @@ import { generateId } from '@/lib/utils';
 // Read schema once at module load — it's static, no need to re-read on every reconnect.
 const SCHEMA = fs.readFileSync(path.join(process.cwd(), 'lib', 'db', 'schema.sql'), 'utf-8');
 
-// In Next.js dev mode, hot reload re-evaluates modules and resets module-level vars,
-// forcing a new DB connection (and schema re-run) on every file save. Persisting via
-// globalThis survives module re-evaluation and keeps the connection alive across reloads.
-// Tests use ':memory:' which is intentionally NOT persisted here; closeSqliteDb() resets
-// it between test cases via the module-level memoryDb variable instead.
+// globalThis persists across Next.js hot reloads so module re-evaluation doesn't
+// force a new DB connection on every file save. In dev mode we invalidate the cached
+// connection when this module re-evaluates so that any new idempotent migrations added
+// to openDb() actually run. Tests use ':memory:' via the module-level memoryDb variable
+// (managed by closeSqliteDb()) and are not affected by the globalThis slot.
 const g = globalThis as typeof globalThis & { __wineSqliteDb?: Database.Database };
 let memoryDb: Database.Database | null = null;
+
+if (process.env.NODE_ENV !== 'production' && g.__wineSqliteDb) {
+  try { g.__wineSqliteDb.close(); } catch {}
+  g.__wineSqliteDb = undefined;
+}
 
 function openDb(resolvedPath: string): Database.Database {
   const conn = new Database(resolvedPath);
