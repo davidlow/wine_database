@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
 import { checkProfileAccess } from '@/lib/permissions';
+import type { LocationType } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
       group_name: body.group_name?.trim() || undefined,
       max_capacity: body.max_capacity ?? undefined,
       notes: body.notes ?? undefined,
+      location_type: (body.location_type as LocationType) || undefined,
     });
     return NextResponse.json(location, { status: 201 });
   } catch (err) {

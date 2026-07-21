@@ -150,6 +150,7 @@ function AddLocationForm({ profileId, existingGroups, onCreated, onCancel }: Add
   const [name, setName] = useState('');
   const [groupName, setGroupName] = useState('');
   const [maxCap, setMaxCap] = useState('');
+  const [locType, setLocType] = useState<string>('standard');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -167,6 +168,7 @@ function AddLocationForm({ profileId, existingGroups, onCreated, onCancel }: Add
           name: name.trim(),
           group_name: groupName.trim() || undefined,
           max_capacity: maxCap ? parseInt(maxCap, 10) : undefined,
+          location_type: locType,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed');
@@ -220,6 +222,24 @@ function AddLocationForm({ profileId, existingGroups, onCreated, onCancel }: Add
             placeholder="Unlimited"
             min={1}
           />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs font-medium text-muted-foreground">Type</label>
+          <div className="mt-1 flex gap-1">
+            {(['standard', 'aging', 'daily'] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setLocType(t)}
+                className={cn(
+                  'flex-1 py-1 rounded-md text-xs font-medium border transition-colors capitalize',
+                  locType === t ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-accent text-muted-foreground'
+                )}
+              >
+                {t === 'daily' ? 'Daily Drinkers' : t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="flex gap-2">
