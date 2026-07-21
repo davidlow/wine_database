@@ -51,6 +51,7 @@ function GroupNode({
   unassignedLocations,
   profileId,
   onRefresh,
+  onError,
 }: {
   node: GroupWithChildren;
   depth: number;
@@ -58,6 +59,7 @@ function GroupNode({
   unassignedLocations: Location[];
   profileId: string;
   onRefresh: () => void;
+  onError: (msg: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [renaming, setRenaming] = useState(false);
@@ -74,11 +76,12 @@ function GroupNode({
     if (!renameName.trim() || renameName === node.name) { setRenaming(false); return; }
     setSaving(true);
     try {
-      await fetch(`/api/location-groups/${node.id}`, {
+      const res = await fetch(`/api/location-groups/${node.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: renameName.trim() }),
       });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); onError(d.error ?? 'Failed to rename group'); return; }
       onRefresh();
     } finally {
       setSaving(false);
@@ -90,11 +93,12 @@ function GroupNode({
     if (!subgroupName.trim()) return;
     setSaving(true);
     try {
-      await fetch('/api/location-groups', {
+      const res = await fetch('/api/location-groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_id: profileId, name: subgroupName.trim(), parent_id: node.id, sort_order: node.children.length }),
       });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); onError(d.error ?? 'Failed to create group'); return; }
       setSubgroupName('');
       setAddingSubgroup(false);
       onRefresh();
@@ -296,6 +300,7 @@ function GroupNode({
               unassignedLocations={unassignedLocations}
               profileId={profileId}
               onRefresh={onRefresh}
+              onError={onError}
             />
           ))}
         </div>
@@ -314,6 +319,7 @@ export default function HierarchyPage() {
   const [newGroupName, setNewGroupName] = useState('');
   const [addingRoot, setAddingRoot] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!profileId) return;
@@ -323,6 +329,7 @@ export default function HierarchyPage() {
         fetch(`/api/locations?profile_id=${profileId}`),
       ]);
       if (gRes.ok) setGroups(await gRes.json());
+      else { const d = await gRes.json().catch(() => ({})); setError(d.error ?? 'Failed to load groups'); }
       if (lRes.ok) setLocations(await lRes.json());
     } finally {
       setLoading(false);
@@ -340,12 +347,14 @@ export default function HierarchyPage() {
   const handleAddRootGroup = async () => {
     if (!newGroupName.trim() || !profileId) return;
     setSaving(true);
+    setError(null);
     try {
-      await fetch('/api/location-groups', {
+      const res = await fetch('/api/location-groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_id: profileId, name: newGroupName.trim(), parent_id: null, sort_order: groups.filter(g => !g.parent_id).length }),
       });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error ?? 'Failed to create group'); return; }
       setNewGroupName('');
       setAddingRoot(false);
       load();
@@ -374,6 +383,14 @@ export default function HierarchyPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      {error && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive flex items-start gap-2">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="shrink-0 opacity-70 hover:opacity-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-3">
         <FolderTree className="h-6 w-6 text-primary" />
@@ -452,6 +469,7 @@ export default function HierarchyPage() {
                 unassignedLocations={unassignedLocations}
                 profileId={profileId}
                 onRefresh={load}
+                onError={setError}
               />
             ))
           )}
