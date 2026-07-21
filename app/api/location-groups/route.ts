@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const groups = await db.getLocationGroups(profileId);
     return NextResponse.json(groups);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? err.message : (err as Record<string, string>)?.message ?? JSON.stringify(err);
     console.error('[GET /api/location-groups]', err);
     return NextResponse.json({ error: msg || 'Failed to fetch location groups' }, { status: 500 });
   }
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(group, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? err.message : (err as Record<string, string>)?.message ?? JSON.stringify(err);
     console.error('[POST /api/location-groups]', err);
     return NextResponse.json({ error: msg || 'Failed to create location group' }, { status: 500 });
   }
