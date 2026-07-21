@@ -5,11 +5,11 @@ type Rotation = 0 | 90 | 180 | 270;
 const LS_KEY = 'cameraRotation';
 const CYCLE: Rotation[] = [0, 90, 180, 270];
 
-export function useCameraRotation() {
+export function useCameraRotation(storageKey = LS_KEY) {
   const [rotation, setRotation] = useState<Rotation>(() => {
     if (typeof window === 'undefined') return 0;
     try {
-      const stored = localStorage.getItem(LS_KEY);
+      const stored = localStorage.getItem(storageKey);
       const n = stored ? parseInt(stored, 10) : 0;
       return (CYCLE.includes(n as Rotation) ? n : 0) as Rotation;
     } catch {
@@ -20,10 +20,10 @@ export function useCameraRotation() {
   const rotateNext = useCallback(() => {
     setRotation(prev => {
       const next = CYCLE[(CYCLE.indexOf(prev) + 1) % CYCLE.length];
-      try { localStorage.setItem(LS_KEY, String(next)); } catch { /* ignore */ }
+      try { localStorage.setItem(storageKey, String(next)); } catch { /* ignore */ }
       return next;
     });
-  }, []);
+  }, [storageKey]);
 
   // CSS transform to apply to the video element inside an aspect-video (16:9) container.
   // scale(16/9) compensates for the aspect flip so the rotated video still covers the container.
