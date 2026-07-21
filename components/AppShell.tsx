@@ -7,20 +7,19 @@ import { useEffect, useState } from 'react';
 import {
   Home, Wine, ScanLine, Layers, BarChart2, Building2,
   UtensilsCrossed, Snowflake, ShoppingBasket, Moon, Sun, Menu, X,
-  Archive, Shuffle,
+  Archive, Shuffle, Monitor, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
 import { useProfile } from '@/hooks/useProfile';
 import { useTheme } from 'next-themes';
 
-type NavLink = { href: string; label: string; Icon: React.ComponentType<{ className?: string }>; exact?: boolean };
+type NavLink = { href: string; label: string; Icon: React.ComponentType<{ className?: string }>; exact?: boolean; desktopCellar?: boolean };
 
-const NAV_LINKS: NavLink[] = [
+const STANDARD_LINKS: NavLink[] = [
   { href: '/', label: 'Dashboard', Icon: Home, exact: true },
   { href: '/wines', label: 'Wines', Icon: Wine },
   { href: '/producers', label: 'Producers', Icon: Building2 },
-  { href: '/profiles', label: 'Cellars', Icon: Layers },
   { href: '/scanner', label: 'Scanner', Icon: ScanLine },
   { href: '/cellar', label: 'Cellar', Icon: Archive },
   { href: '/defragment', label: 'Defragment', Icon: Shuffle },
@@ -30,18 +29,31 @@ const NAV_LINKS: NavLink[] = [
   { href: '/statistics', label: 'Statistics', Icon: BarChart2 },
 ];
 
+const DESKTOP_LINKS: NavLink[] = [
+  { href: '/profiles', label: 'Desktop Cellar', Icon: Layers, desktopCellar: true },
+  { href: '/desktop/scanner', label: 'Desktop Scanner', Icon: ScanLine },
+  { href: '/desktop/wines', label: 'Desktop Wines', Icon: Wine },
+  { href: '/desktop/defragment', label: 'Desktop Defrag', Icon: Shuffle },
+  { href: '/desktop/freezer', label: 'Desktop Freezer', Icon: Snowflake },
+  { href: '/desktop/pantry', label: 'Desktop Pantry', Icon: ShoppingBasket },
+];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { activeProfile } = useProfile();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [desktopSectionOpen, setDesktopSectionOpen] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const cellarsHref = activeProfile ? `/profiles/${activeProfile.id}` : '/profiles';
 
-  const isActive = (href: string, exact?: boolean) =>
-    exact ? pathname === href : pathname.startsWith(href);
+  const isActive = (link: NavLink) => {
+    const { href, exact, desktopCellar } = link;
+    if (desktopCellar) return pathname.startsWith('/profiles');
+    return exact ? pathname === href : pathname.startsWith(href);
+  };
 
   const navItemCls = (active: boolean) => cn(
     'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors w-full text-left',
@@ -50,23 +62,52 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
   );
 
-  const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
+  const renderLink = (link: NavLink, onNavigate?: () => void) => {
+    const resolvedHref = link.desktopCellar ? cellarsHref : link.href;
+    const active = isActive(link);
+    return (
+      <Link
+        key={link.href}
+        href={resolvedHref}
+        className={navItemCls(active)}
+        onClick={onNavigate}
+      >
+        <link.Icon className="h-4 w-4 shrink-0" />
+        {link.label}
+      </Link>
+    );
+  };
+
+  const NavLinks = ({ onNavigate, showDesktop }: { onNavigate?: () => void; showDesktop?: boolean }) => (
     <>
-      {NAV_LINKS.map(({ href, label, Icon, exact }) => {
-        const resolvedHref = href === '/profiles' ? cellarsHref : href;
-        const active = isActive(href === '/profiles' ? '/profiles' : href, exact);
-        return (
-          <Link
-            key={href}
-            href={resolvedHref}
-            className={navItemCls(active)}
-            onClick={onNavigate}
+      {STANDARD_LINKS.map(link => renderLink(link, onNavigate))}
+
+      {/* Desktop section divider */}
+      <div className="pt-2">
+        {showDesktop ? (
+          <>
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              <Monitor className="h-3.5 w-3.5 text-muted-foreground/60" />
+              <span className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider">Desktop</span>
+            </div>
+            {DESKTOP_LINKS.map(link => renderLink(link, onNavigate))}
+          </>
+        ) : (
+          <button
+            onClick={() => setDesktopSectionOpen(v => !v)}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium text-muted-foreground/60 uppercase tracking-wider hover:text-muted-foreground transition-colors"
           >
-            <Icon className="h-4 w-4 shrink-0" />
-            {label}
-          </Link>
-        );
-      })}
+            <Monitor className="h-3.5 w-3.5" />
+            Desktop
+            {desktopSectionOpen
+              ? <ChevronDown className="h-3 w-3 ml-auto" />
+              : <ChevronRight className="h-3 w-3 ml-auto" />}
+          </button>
+        )}
+        {!showDesktop && desktopSectionOpen && (
+          DESKTOP_LINKS.map(link => renderLink(link, onNavigate))
+        )}
+      </div>
     </>
   );
 
@@ -95,8 +136,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             Wine Cellar
           </h1>
         </div>
-        <nav className="flex-1 px-2 py-4 space-y-1">
-          <NavLinks />
+        <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+          <NavLinks showDesktop />
         </nav>
         <div className="px-3 py-3 border-t space-y-2">
           <ProfileSelector />
@@ -154,7 +195,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-              <NavLinks onNavigate={() => setDrawerOpen(false)} />
+              <NavLinks onNavigate={() => setDrawerOpen(false)} showDesktop={false} />
             </nav>
             <div className="px-3 py-3 border-t space-y-2">
               <ProfileSelector />
