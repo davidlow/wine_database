@@ -37,21 +37,9 @@ const SCHEMA = fs.readFileSync(path.join(process.cwd(), 'lib', 'db', 'schema.sql
 const g = globalThis as typeof globalThis & { __wineSqliteDb?: Database.Database };
 let memoryDb: Database.Database | null = null;
 
-if (process.env.NODE_ENV !== 'production' && g.__wineSqliteDb) {
-  try { g.__wineSqliteDb.close(); } catch {}
-  g.__wineSqliteDb = undefined;
-}
-
-function openDb(resolvedPath: string): Database.Database {
-  const conn = new Database(resolvedPath);
-  conn.pragma('journal_mode = WAL');
-  conn.pragma('foreign_keys = ON');
-  conn.pragma('synchronous = NORMAL');    // safe with WAL; avoids fsync on every write
-  conn.pragma('cache_size = -20000');     // 20 MB page cache (default is ~2 MB)
-  conn.pragma('temp_store = MEMORY');     // temp tables and indices stay in RAM
-  conn.pragma('mmap_size = 268435456');  // 256 MB memory-mapped reads
-  conn.exec(SCHEMA);
-  // Idempotent column migrations — ignored if column already exists
+// Idempotent migrations — safe to re-run on any existing connection.
+// All ALTER TABLE statements are swallowed if the column already exists.
+function runMigrations(conn: Database.Database): void {
   try { conn.exec('ALTER TABLE locations ADD COLUMN group_name TEXT'); } catch {}
   try { conn.exec('ALTER TABLE profiles ADD COLUMN group_name TEXT'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN drink_from_year INTEGER'); } catch {}
@@ -74,20 +62,27 @@ function openDb(resolvedPath: string): Database.Database {
   try { conn.exec('ALTER TABLE wines ADD COLUMN oak_influence REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_intensity REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN pairing_rationale TEXT'); } catch {}
-  // Create cuisine tags table if not present (new table, not a migration)
-  conn.exec(`
-    CREATE TABLE IF NOT EXISTS wine_cuisine_tags (
-      id         TEXT PRIMARY KEY,
-      wine_id    TEXT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
-      tag        TEXT NOT NULL,
-      source     TEXT DEFAULT 'manual',
-      created_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(wine_id, tag)
-    );
-    CREATE INDEX IF NOT EXISTS idx_wct_wine_id ON wine_cuisine_tags(wine_id);
-    CREATE INDEX IF NOT EXISTS idx_wct_tag    ON wine_cuisine_tags(tag);
-  `);
+}
+
+function openDb(resolvedPath: string): Database.Database {
+  const conn = new Database(resolvedPath);
+  conn.pragma('journal_mode = WAL');
+  conn.pragma('foreign_keys = ON');
+  conn.pragma('synchronous = NORMAL');    // safe with WAL; avoids fsync on every write
+  conn.pragma('cache_size = -20000');     // 20 MB page cache (default is ~2 MB)
+  conn.pragma('temp_store = MEMORY');     // temp tables and indices stay in RAM
+  conn.pragma('mmap_size = 268435456');  // 256 MB memory-mapped reads
+  conn.exec(SCHEMA);
+  runMigrations(conn);
   return conn;
+}
+
+// In dev mode, re-run migrations on the existing connection whenever this module is
+// re-evaluated (hot reload). This ensures newly-added ALTER TABLE statements execute
+// on the live connection without closing and reopening it — closing mid-flight would
+// break any in-progress requests still holding a reference to the old handle.
+if (process.env.NODE_ENV !== 'production' && g.__wineSqliteDb) {
+  runMigrations(g.__wineSqliteDb);
 }
 
 function getDb(): Database.Database {
