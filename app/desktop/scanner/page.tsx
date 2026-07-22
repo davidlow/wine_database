@@ -99,13 +99,13 @@ function BarcodeCameraModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) { stop(); onClose(); } }}>
-      <div className="bg-card rounded-xl border shadow-2xl overflow-hidden w-full max-w-lg">
+      <div className="bg-card rounded-xl border shadow-2xl overflow-hidden w-full max-w-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <p className="font-semibold text-sm flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Scan Barcode</p>
           <button onClick={() => { stop(); onClose(); }} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '4/3', maxHeight: '60vh' }}>
+        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '16/9' }}>
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover"
@@ -120,8 +120,8 @@ function BarcodeCameraModal({
           )}
           {status === 'scanning' && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-3/4 h-16 border-2 border-green-400 rounded-sm opacity-80" />
-              <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">Rotate the bottle so the barcode is horizontal, then align in the frame</p>
+              <div className="w-3/4 h-32 border-2 border-green-400 rounded-sm opacity-80" />
+              <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">Tilt the bottle so the barcode is horizontal, then center it in the frame</p>
             </div>
           )}
         </div>
