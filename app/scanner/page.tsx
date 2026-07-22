@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Sparkles } from 'lucide-react';
 import BarcodeScanner from '@/components/BarcodeScanner';
-import LabelCapture from '@/components/LabelCapture';
+import LabelCapture, { type LabelCaptureResult } from '@/components/LabelCapture';
 import WineForm from '@/components/WineForm';
 import type { WineLookupResult } from '@/lib/wine-lookup/types';
 import type { Wine } from '@/types';
@@ -73,7 +73,7 @@ export default function ScannerPage() {
     setLabelFoodPairings([]);
   };
 
-  const handleLabelCapture = async ({ gemini, thumbnail }: { gemini: string; thumbnail: string }) => {
+  const handleLabelCapture = async ({ gemini, backGemini, thumbnail }: LabelCaptureResult) => {
     setCapturedLabelImage(thumbnail);
     setScanState('analyzing-label');
     setErrorMessage(null);
@@ -81,7 +81,7 @@ export default function ScannerPage() {
       const res = await fetch('/api/label-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: gemini, barcode: scannedCode }),
+        body: JSON.stringify({ imageBase64: gemini, backImageBase64: backGemini ?? null, barcode: scannedCode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed');

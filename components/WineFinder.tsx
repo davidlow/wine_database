@@ -174,6 +174,7 @@ export default function WineFinder({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: result.gemini,
+          backImageBase64: result.backGemini ?? null,
           barcode: barcodeCode || undefined,
         }),
       });

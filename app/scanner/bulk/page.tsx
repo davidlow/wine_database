@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronUp, Loader2, PackagePlus, RotateCcw, Trash2, X,
 } from 'lucide-react';
 import BarcodeScanner from '@/components/BarcodeScanner';
-import LabelCapture from '@/components/LabelCapture';
+import LabelCapture, { type LabelCaptureResult } from '@/components/LabelCapture';
 import LocationPicker from '@/components/LocationPicker';
 import { useProfile } from '@/hooks/useProfile';
 import type { BulkScanItem, WineType } from '@/types';
@@ -96,7 +96,7 @@ export default function BulkScanPage() {
     }
   }, []);
 
-  const handleLabelCapture = async (barcode: string, { gemini }: { gemini: string; thumbnail: string }) => {
+  const handleLabelCapture = async (barcode: string, { gemini, backGemini }: LabelCaptureResult) => {
     setCapturingLabel(null);
     setScanEntries(prev => prev.map(e => e.barcode === barcode ? { ...e, state: 'label-scanning' } : e));
 
@@ -104,7 +104,7 @@ export default function BulkScanPage() {
       const res = await fetch('/api/label-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: gemini, barcode }),
+        body: JSON.stringify({ imageBase64: gemini, backImageBase64: backGemini ?? null, barcode }),
       });
       const result: WineLookupResult = await res.json();
 

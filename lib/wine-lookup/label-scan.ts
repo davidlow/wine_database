@@ -196,24 +196,35 @@ Rules:
 - Return exactly ${n} array elements, one per wine image`;
 }
 
-export async function scanLabel(imageBase64: string, barcode?: string): Promise<WineLookupResult> {
+export async function scanLabel(
+  frontImageBase64: string,
+  backImageBase64?: string | null,
+  barcode?: string,
+  _forceNoGrounding = false,
+): Promise<WineLookupResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
 
   const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
-  const useGrounding = process.env.GEMINI_GROUNDING !== 'false';
+  const useGrounding = !_forceNoGrounding && process.env.GEMINI_GROUNDING !== 'false';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  const promptText = barcode
-    ? `${PROMPT}\n\nNote: the barcode on this bottle is ${barcode} — use it as a search anchor to identify the exact wine.`
-    : PROMPT;
+  let promptText = PROMPT;
+  if (backImageBase64) {
+    promptText += '\n\nNote: two images are provided — the FIRST is the front label, the SECOND is the back label. Use both to extract maximum information, especially description, alcohol content, and food pairings from the back.';
+  }
+  if (barcode) {
+    promptText += `\n\nNote: the barcode on this bottle is ${barcode} — use it as a search anchor to identify the exact wine.`;
+  }
+
+  const imageParts: GeminiPart[] = [
+    { inline_data: { mime_type: 'image/webp', data: frontImageBase64 } },
+    ...(backImageBase64 ? [{ inline_data: { mime_type: 'image/webp', data: backImageBase64 } } as GeminiPart] : []),
+  ];
 
   const body: GeminiRequest = {
     contents: [{
-      parts: [
-        { inline_data: { mime_type: 'image/webp', data: imageBase64 } },
-        { text: promptText },
-      ],
+      parts: [...imageParts, { text: promptText }],
     }],
   };
 
@@ -231,9 +242,8 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
 
   if (!res.ok || json.error) {
     const msg = json.error?.message ?? `Gemini API error ${res.status}`;
-    // If grounding isn't available on this API key tier, retry without it
     if (useGrounding && (res.status === 400 || res.status === 429) && msg.toLowerCase().includes('grounding')) {
-      return scanLabel(imageBase64, barcode); // will use GEMINI_GROUNDING=false path on next env check
+      return scanLabel(frontImageBase64, backImageBase64, barcode, true);
     }
     throw new Error(msg);
   }
@@ -379,7 +389,7 @@ export interface BatchLabelResult extends Partial<WineLookupResult> {
 }
 
 export async function scanLabelBatch(
-  items: Array<{ id: string; imageBase64: string; barcode?: string }>
+  items: Array<{ id: string; imageBase64: string; backImageBase64?: string; barcode?: string }>
 ): Promise<BatchLabelResult[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
@@ -393,8 +403,12 @@ export async function scanLabelBatch(
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     parts.push({ inline_data: { mime_type: 'image/webp', data: item.imageBase64 } });
+    if (item.backImageBase64) {
+      parts.push({ inline_data: { mime_type: 'image/webp', data: item.backImageBase64 } });
+    }
     const barcodeNote = item.barcode ? `, barcode: ${item.barcode}` : '';
-    parts.push({ text: `Wine ${i + 1} (id: "${item.id}"${barcodeNote})` });
+    const labelNote = item.backImageBase64 ? ' (front+back labels)' : '';
+    parts.push({ text: `Wine ${i + 1} (id: "${item.id}"${barcodeNote}${labelNote})` });
   }
   parts.push({ text: batchPrompt(items.length) });
 

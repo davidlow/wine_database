@@ -119,7 +119,7 @@ export default function RackScannerPage() {
 
   // Gemini batch refs
   const geminiQueue = useRef<string[]>([]); // entry IDs awaiting batch
-  const geminiPendingData = useRef<Map<string, { imageBase64: string; barcode?: string }>>(new Map());
+  const geminiPendingData = useRef<Map<string, { imageBase64: string; backImageBase64?: string; barcode?: string }>>(new Map());
   const batchInFlight = useRef(false);
   const currentBatchPromise = useRef<Promise<void>>(Promise.resolve());
   const triggerGeminiBatchRef = useRef<(force: boolean) => void>(() => {});
@@ -163,7 +163,7 @@ export default function RackScannerPage() {
 
     const items = ids.flatMap(id => {
       const d = geminiPendingData.current.get(id);
-      return d ? [{ id, imageBase64: d.imageBase64, barcode: d.barcode }] : [];
+      return d ? [{ id, imageBase64: d.imageBase64, backImageBase64: d.backImageBase64, barcode: d.barcode }] : [];
     });
 
     const batchPromise = (async () => {
@@ -230,7 +230,7 @@ export default function RackScannerPage() {
 
   // ── Label capture ──────────────────────────────────────────────────────────
 
-  const handleLabelCapture = useCallback(async ({ gemini, thumbnail }: LabelCaptureResult) => {
+  const handleLabelCapture = useCallback(async ({ gemini, backGemini, thumbnail }: LabelCaptureResult) => {
     const barcodeWine = await barcodeLookupRef.current;
     if (barcodeWine) {
       // Barcode found — show qty step (user confirms and sets quantity)
@@ -244,7 +244,7 @@ export default function RackScannerPage() {
       const id = Math.random().toString(36).slice(2, 10);
       const barcode = barcodeRef.current || undefined;
       if (barcode) scannedBarcodes.current.set(barcode, id);
-      geminiPendingData.current.set(id, { imageBase64: gemini, barcode });
+      geminiPendingData.current.set(id, { imageBase64: gemini, backImageBase64: backGemini, barcode });
       setEntries(prev => [...prev, { id, wine: {}, quantity: 1, labelThumbnail: thumbnail, source: 'pending' }]);
       geminiQueue.current.push(id);
       resetBottle();

@@ -15,14 +15,17 @@ async function resizeToWebP(source: HTMLCanvasElement, maxW: number, maxH: numbe
 }
 
 export interface LabelCaptureResult {
-  gemini: string;    // 400×600 @ 0.7 — sent to the label-scan API
-  thumbnail: string; // 150×225 @ 0.35 — stored in the database
+  gemini: string;       // front label, 400×600 @ 0.7 — sent to the label-scan API
+  backGemini?: string;  // back label, 400×600 @ 0.7 — sent alongside front for better ID
+  thumbnail: string;    // front label, 150×225 @ 0.35 — stored in the database
 }
 
 interface Props {
   onCapture: (result: LabelCaptureResult) => void;
   onCancel: () => void;
 }
+
+type Phase = 'front' | 'back';
 
 export default function LabelCapture({ onCapture, onCancel }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -31,6 +34,8 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [phase, setPhase] = useState<Phase>('front');
+  const [frontData, setFrontData] = useState<{ gemini: string; thumbnail: string } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -63,16 +68,15 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
     };
   }, []);
 
-  const capture = async () => {
+  const captureFrame = async (): Promise<{ gemini: string; thumbnail: string } | null> => {
     const video = videoRef.current;
-    if (!video || !ready || processing) return;
-    setProcessing(true);
+    if (!video || !ready || processing) return null;
 
     const nativeW = video.videoWidth;
     const nativeH = video.videoHeight;
 
     const guide = guideRef.current;
-    if (!guide) { setProcessing(false); return; }
+    if (!guide) return null;
 
     const containerRect = video.getBoundingClientRect();
     const guideRect = guide.getBoundingClientRect();
@@ -90,23 +94,55 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
     raw.width = Math.round(srcW);
     raw.height = Math.round(srcH);
     const ctx = raw.getContext('2d');
-    if (!ctx) { setProcessing(false); return; }
+    if (!ctx) return null;
     ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
 
+    const [gemini, thumbnail] = await Promise.all([
+      resizeToWebP(raw, 400, 600, 0.7),
+      resizeToWebP(raw, 150, 225, 0.35),
+    ]);
+    return { gemini, thumbnail };
+  };
+
+  const handleCaptureFront = async () => {
+    setProcessing(true);
     try {
-      const [gemini, thumbnail] = await Promise.all([
-        resizeToWebP(raw, 400, 600, 0.7),
-        resizeToWebP(raw, 150, 225, 0.35),
-      ]);
-      onCapture({ gemini, thumbnail });
+      const data = await captureFrame();
+      if (!data) return;
+      setFrontData(data);
+      setPhase('back');
     } finally {
       setProcessing(false);
     }
   };
 
+  const handleCaptureBack = async () => {
+    if (!frontData) return;
+    setProcessing(true);
+    try {
+      const data = await captureFrame();
+      if (!data) return;
+      onCapture({ gemini: frontData.gemini, backGemini: data.gemini, thumbnail: frontData.thumbnail });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSkipBack = () => {
+    if (!frontData) return;
+    onCapture({ gemini: frontData.gemini, thumbnail: frontData.thumbnail });
+  };
+
   return (
     <div className="space-y-3">
-      {/* Portrait container — tall and narrow for maximum vertical label coverage */}
+      {/* Step indicator */}
+      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+        <span className={phase === 'front' ? 'font-semibold text-foreground' : ''}>1. Front label</span>
+        <span>→</span>
+        <span className={phase === 'back' ? 'font-semibold text-foreground' : ''}>2. Back label</span>
+      </div>
+
+      {/* Portrait camera — tall and narrow for maximum vertical label coverage */}
       <div className="relative rounded-lg overflow-hidden bg-black aspect-[3/4] w-full max-w-sm mx-auto">
         <video
           ref={videoRef}
@@ -126,6 +162,18 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-red-300 text-sm px-6 text-center">
             {error}
+          </div>
+        )}
+
+        {/* Front thumbnail overlay in back phase */}
+        {ready && phase === 'back' && frontData && (
+          <div className="absolute top-2 left-2 z-10">
+            <img
+              src={`data:image/webp;base64,${frontData.thumbnail}`}
+              alt="Front label captured"
+              className="w-10 h-14 object-cover rounded border-2 border-green-400 shadow"
+            />
+            <span className="block text-center text-[9px] text-green-300 mt-0.5">Front ✓</span>
           </div>
         )}
 
@@ -151,26 +199,50 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Hold label upright · align within the frame · TOP and BTM mark the correct orientation
+        {phase === 'front'
+          ? 'Hold front label upright · align within frame · TOP and BTM mark correct orientation'
+          : 'Flip bottle · align back label upright · or skip if no back label'}
       </p>
 
       <div className="flex justify-center gap-3">
-        <button
-          onClick={capture}
-          disabled={!ready || processing}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors"
-        >
-          {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-          {processing ? 'Processing…' : 'Capture'}
-        </button>
-        <button
-          onClick={onCancel}
-          disabled={processing}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm hover:bg-accent transition-colors disabled:opacity-40"
-        >
-          <X className="h-4 w-4" />
-          Cancel
-        </button>
+        {phase === 'front' ? (
+          <>
+            <button
+              onClick={handleCaptureFront}
+              disabled={!ready || processing}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors"
+            >
+              {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              {processing ? 'Processing…' : 'Capture Front'}
+            </button>
+            <button
+              onClick={onCancel}
+              disabled={processing}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm hover:bg-accent transition-colors disabled:opacity-40"
+            >
+              <X className="h-4 w-4" />
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={handleCaptureBack}
+              disabled={!ready || processing}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors"
+            >
+              {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              {processing ? 'Processing…' : 'Capture Back'}
+            </button>
+            <button
+              onClick={handleSkipBack}
+              disabled={processing}
+              className="px-4 py-2.5 rounded-full border text-sm hover:bg-accent transition-colors disabled:opacity-40"
+            >
+              Skip Back
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

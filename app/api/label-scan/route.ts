@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     if (!body.imageBase64) return NextResponse.json({ error: 'imageBase64 required' }, { status: 400 });
 
-    const result = await scanLabel(body.imageBase64, body.barcode ?? undefined);
+    const result = await scanLabel(body.imageBase64, body.backImageBase64 ?? null, body.barcode ?? undefined);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Label scan failed';

@@ -63,8 +63,9 @@ interface ScanRow {
   qty: number;
   location: string;
   wineId: string | null;
-  labelGemini: string | null;    // 400×600 @ 0.7 — sent to /api/label-scan
-  labelThumbnail: string | null; // 150×225 @ 0.35 — displayed + saved to DB
+  labelGemini: string | null;     // front label 400×600 @ 0.7 — sent to /api/label-scan
+  labelBackGemini: string | null; // back label 400×600 @ 0.7 — sent alongside front
+  labelThumbnail: string | null;  // 150×225 @ 0.35 — displayed + saved to DB
   errorMsg: string | null;
   geminiExtras: GeminiExtras | null;
 }
@@ -75,7 +76,7 @@ function blankRow(): ScanRow {
     barcode: '', status: 'idle',
     wineName: '', producer: '', vintage: '', wineType: '', variety: '', region: '',
     qty: 1, location: '', wineId: null,
-    labelGemini: null, labelThumbnail: null, errorMsg: null, geminiExtras: null,
+    labelGemini: null, labelBackGemini: null, labelThumbnail: null, errorMsg: null, geminiExtras: null,
   };
 }
 
@@ -119,7 +120,7 @@ function BarcodeCameraModal({
           )}
           {status === 'scanning' && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-3/4 h-1/2 border-2 border-green-400 rounded-sm opacity-80" />
+              <div className="w-3/4 h-2/3 border-2 border-green-400 rounded-sm opacity-80" />
               <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">Tilt the bottle so the barcode is horizontal, then center it in the frame</p>
             </div>
           )}
@@ -133,14 +134,14 @@ function BarcodeCameraModal({
   );
 }
 
-// ── Label capture modal — landscape orientation, neck pointing left ──────────────
+// ── Label capture modal — landscape orientation, neck pointing left, two-step ─────
 // Bottle lies on its side (neck left). Guide box is landscape. After the guide-box
 // crop, the raw canvas is rotated 90° CW so the output is portrait (neck at top)
-// before being sent to Gemini. gemini: 400×600 @ 0.7 → API; thumbnail: 150×225 @ 0.35 → DB
+// before being sent to Gemini. Front then back label captured in sequence.
 function LabelCaptureModal({
   onCapture, onClose,
 }: {
-  onCapture: (gemini: string, thumbnail: string) => void; onClose: () => void;
+  onCapture: (gemini: string, thumbnail: string, backGemini?: string) => void; onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -148,6 +149,8 @@ function LabelCaptureModal({
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [phase, setPhase] = useState<'front' | 'back'>('front');
+  const [frontData, setFrontData] = useState<{ gemini: string; thumbnail: string } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -161,15 +164,12 @@ function LabelCaptureModal({
     return () => { mounted = false; streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null; };
   }, []);
 
-  const capture = async () => {
+  const captureFrame = async (): Promise<{ gemini: string; thumbnail: string } | null> => {
     const video = videoRef.current;
-    if (!video || !ready || processing) return;
-    setProcessing(true);
+    if (!video || !ready || processing) return null;
     const nativeW = video.videoWidth, nativeH = video.videoHeight;
-
-    // Crop the guide-box area from the live video frame
     const guide = guideRef.current;
-    if (!guide) { setProcessing(false); return; }
+    if (!guide) return null;
     const containerRect = video.getBoundingClientRect();
     const guideRect = guide.getBoundingClientRect();
     const displayW = containerRect.width, displayH = containerRect.height;
@@ -183,39 +183,70 @@ function LabelCaptureModal({
     const raw = document.createElement('canvas');
     raw.width = Math.round(srcW); raw.height = Math.round(srcH);
     raw.getContext('2d')!.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
-
     // Rotate 90° CW: landscape crop (neck-left) → portrait (neck-top) for Gemini
     const rotated = document.createElement('canvas');
-    rotated.width = raw.height;
-    rotated.height = raw.width;
+    rotated.width = raw.height; rotated.height = raw.width;
     const rctx = rotated.getContext('2d')!;
-    rctx.translate(raw.height, 0);
-    rctx.rotate(Math.PI / 2);
+    rctx.translate(raw.height, 0); rctx.rotate(Math.PI / 2);
     rctx.drawImage(raw, 0, 0);
+    const [gemini, thumbnail] = await Promise.all([
+      resizeToWebP(rotated, 400, 600, 0.7),
+      resizeToWebP(rotated, 150, 225, 0.35),
+    ]);
+    return { gemini, thumbnail };
+  };
 
+  const handleCaptureFront = async () => {
+    setProcessing(true);
     try {
-      const [gemini, thumbnail] = await Promise.all([
-        resizeToWebP(rotated, 400, 600, 0.7),
-        resizeToWebP(rotated, 150, 225, 0.35),
-      ]);
-      onCapture(gemini, thumbnail);
+      const data = await captureFrame();
+      if (!data) return;
+      setFrontData(data);
+      setPhase('back');
+    } finally { setProcessing(false); }
+  };
+
+  const handleCaptureBack = async () => {
+    if (!frontData) return;
+    setProcessing(true);
+    try {
+      const data = await captureFrame();
+      if (!data) return;
+      onCapture(frontData.gemini, frontData.thumbnail, data.gemini);
       onClose();
-    } finally {
-      setProcessing(false);
-    }
+    } finally { setProcessing(false); }
+  };
+
+  const handleSkipBack = () => {
+    if (!frontData) return;
+    onCapture(frontData.gemini, frontData.thumbnail);
+    onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-card rounded-xl border shadow-2xl overflow-hidden w-full max-w-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b">
-          <p className="font-semibold text-sm flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Scan Label</p>
+          <div className="flex items-center gap-3">
+            <p className="font-semibold text-sm flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Scan Label</p>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className={phase === 'front' ? 'font-semibold text-foreground' : ''}>1. Front</span>
+              <span>→</span>
+              <span className={phase === 'back' ? 'font-semibold text-foreground' : ''}>2. Back</span>
+            </div>
+          </div>
           <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
         </div>
         <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '16/9' }}>
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" autoPlay muted playsInline />
           {!ready && !error && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white"><Loader2 className="h-6 w-6 animate-spin mr-2" /><span className="text-sm">Starting camera…</span></div>}
           {error && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-red-300 text-sm px-6 text-center">{error}</div>}
+          {ready && phase === 'back' && frontData && (
+            <div className="absolute top-2 left-2 z-10">
+              <img src={`data:image/webp;base64,${frontData.thumbnail}`} alt="Front captured" className="w-10 h-14 object-cover rounded border-2 border-green-400 shadow" />
+              <span className="block text-center text-[9px] text-green-300 mt-0.5">Front ✓</span>
+            </div>
+          )}
           {ready && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
               <div ref={guideRef} className="relative w-[85%] h-[70%]">
@@ -231,14 +262,30 @@ function LabelCaptureModal({
           )}
         </div>
         <div className="px-4 py-2 text-center">
-          <p className="text-xs text-muted-foreground">Lay bottle on its side, neck pointing left · align label within the frame · image will be rotated automatically</p>
+          <p className="text-xs text-muted-foreground">
+            {phase === 'front'
+              ? 'Lay bottle on its side, neck pointing left · align front label · image will be rotated automatically'
+              : 'Flip bottle to back label · align within frame · or skip if no back label'}
+          </p>
         </div>
         <div className="px-4 py-3 flex justify-center gap-3">
-          <button onClick={capture} disabled={!ready || processing} className="flex items-center gap-2 px-6 py-2 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors">
-            {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-            {processing ? 'Processing…' : 'Capture'}
-          </button>
-          <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 rounded-full border text-sm hover:bg-accent transition-colors"><X className="h-4 w-4" /> Cancel</button>
+          {phase === 'front' ? (
+            <>
+              <button onClick={handleCaptureFront} disabled={!ready || processing} className="flex items-center gap-2 px-6 py-2 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors">
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {processing ? 'Processing…' : 'Capture Front'}
+              </button>
+              <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 rounded-full border text-sm hover:bg-accent transition-colors"><X className="h-4 w-4" /> Cancel</button>
+            </>
+          ) : (
+            <>
+              <button onClick={handleCaptureBack} disabled={!ready || processing} className="flex items-center gap-2 px-6 py-2 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors">
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {processing ? 'Processing…' : 'Capture Back'}
+              </button>
+              <button onClick={handleSkipBack} disabled={processing} className="px-4 py-2 rounded-full border text-sm hover:bg-accent transition-colors disabled:opacity-40">Skip Back</button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -381,8 +428,8 @@ export default function DesktopScannerPage() {
     lookupBarcode(cameraRowId, barcode);
   }, [cameraRowId, lookupBarcode]);
 
-  // After label photo captured — gemini (400×600) → API; thumbnail (150×225) → DB + display
-  const handleLabelCapture = useCallback(async (gemini: string, thumbnail: string) => {
+  // After label photo(s) captured — gemini (400×600) → API; thumbnail (150×225) → DB + display
+  const handleLabelCapture = useCallback(async (gemini: string, thumbnail: string, backGemini?: string) => {
     const targetRowId = labelRowId;
     if (!targetRowId) return;
     setLabelRowId(null);
@@ -390,7 +437,7 @@ export default function DesktopScannerPage() {
     try {
       const res = await fetch('/api/label-scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: gemini }),
+        body: JSON.stringify({ imageBase64: gemini, backImageBase64: backGemini ?? null }),
       });
       const data = await res.json();
       if (res.ok && data.name) {
@@ -403,6 +450,7 @@ export default function DesktopScannerPage() {
           variety: data.variety ?? '',
           region: data.region ?? '',
           labelGemini: gemini,
+          labelBackGemini: backGemini ?? null,
           labelThumbnail: thumbnail,
           geminiExtras: {
             appellation: data.appellation,

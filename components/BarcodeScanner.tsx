@@ -1,99 +1,152 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Camera, CameraOff, Loader2, RotateCw } from 'lucide-react';
-import { useBarcode } from '@/hooks/useBarcode';
-import { useCameraRotation } from '@/hooks/useCameraRotation';
+import { useEffect, useRef, useState } from 'react';
+import { Camera, CameraOff, Loader2, ScanLine } from 'lucide-react';
 
 interface Props {
   onDetected: (barcode: string) => void;
   autoStart?: boolean;
 }
 
+type ScanState = 'idle' | 'starting' | 'ready' | 'decoding' | 'notfound' | 'error';
+
 export default function BarcodeScanner({ onDetected, autoStart = false }: Props) {
-  const { videoRef, status, error, start, stop } = useBarcode(onDetected);
-  const { rotation, rotateNext, videoStyle } = useCameraRotation();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const readerRef = useRef<{ decodeFromCanvas(c: HTMLCanvasElement): { getText(): string } } | null>(null);
+  const [scanState, setScanState] = useState<ScanState>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const startCamera = async () => {
+    setScanState('starting');
+    setErrorMsg(null);
+    try {
+      const [stream, zxing] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        }),
+        import('@zxing/browser').then(async ({ BrowserMultiFormatReader, BarcodeFormat }) => {
+          const { DecodeHintType } = await import('@zxing/library');
+          const hints = new Map();
+          hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.EAN_8,
+          ]);
+          return new BrowserMultiFormatReader(hints);
+        }),
+      ]);
+      streamRef.current = stream;
+      readerRef.current = zxing;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => setScanState('ready');
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Camera access failed');
+      setScanState('error');
+    }
+  };
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    readerRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setScanState('idle');
+  };
+
+  const capture = () => {
+    const video = videoRef.current;
+    const reader = readerRef.current;
+    if (!video || !reader || scanState !== 'ready') return;
+    setScanState('decoding');
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')!.drawImage(video, 0, 0);
+
+    try {
+      const result = reader.decodeFromCanvas(canvas);
+      onDetected(result.getText());
+    } catch {
+      setScanState('notfound');
+    }
+  };
 
   useEffect(() => {
-    if (autoStart) start();
-    return () => stop();
+    if (autoStart) startCamera();
+    return () => stopCamera();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const isActive = status === 'scanning' || status === 'starting';
+  // Reset "not found" feedback after 1.5 s so user can try again
+  useEffect(() => {
+    if (scanState !== 'notfound') return;
+    const t = setTimeout(() => setScanState('ready'), 1500);
+    return () => clearTimeout(t);
+  }, [scanState]);
+
+  const isActive = scanState === 'ready' || scanState === 'decoding' || scanState === 'notfound';
 
   return (
     <div className="space-y-3">
-      <div className="relative rounded-lg overflow-hidden bg-black aspect-video w-full max-w-md mx-auto">
-        <video
-          ref={videoRef}
-          className="w-full h-full object-cover"
-          style={videoStyle}
-          autoPlay
-          muted
-          playsInline
-        />
+      <div className="relative rounded-lg overflow-hidden bg-black aspect-[4/3] w-full max-w-md mx-auto">
+        <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
 
-        {/* Rotate button — visible whenever camera is active */}
-        {isActive && (
-          <button
-            onClick={rotateNext}
-            className="absolute top-2 right-2 z-10 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70 transition-colors"
-            title={`Rotate camera (currently ${rotation}°)`}
-          >
-            <RotateCw className="h-4 w-4" />
-          </button>
-        )}
-
-        {status !== 'scanning' && (
+        {!isActive && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 text-white">
-            {status === 'starting' && (
-              <>
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <p className="text-sm">Starting camera…</p>
-              </>
-            )}
-            {status === 'idle' && (
-              <>
-                <CameraOff className="h-8 w-8 opacity-60" />
-                <p className="text-sm opacity-80">Camera inactive</p>
-              </>
-            )}
-            {status === 'error' && (
-              <>
-                <CameraOff className="h-8 w-8 text-red-400" />
-                <p className="text-sm text-red-300">{error ?? 'Camera error'}</p>
-              </>
-            )}
+            {scanState === 'starting' && <><Loader2 className="h-8 w-8 animate-spin" /><p className="text-sm">Starting camera…</p></>}
+            {scanState === 'idle' && <><CameraOff className="h-8 w-8 opacity-60" /><p className="text-sm opacity-80">Camera inactive</p></>}
+            {scanState === 'error' && <><CameraOff className="h-8 w-8 text-red-400" /><p className="text-sm text-red-300">{errorMsg ?? 'Camera error'}</p></>}
           </div>
         )}
-        {status === 'scanning' && (
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-24 border-2 border-green-400 rounded-sm opacity-80" />
-            <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">
-              Align barcode in the frame
+
+        {isActive && (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+            <div className={`w-3/4 h-2/3 border-2 rounded-sm opacity-80 ${scanState === 'notfound' ? 'border-red-400' : 'border-green-400'}`} />
+            <p className={`absolute bottom-3 left-0 right-0 text-center text-xs ${scanState === 'notfound' ? 'text-red-300' : 'text-green-300'}`}>
+              {scanState === 'notfound' ? 'Barcode not detected — try again' : 'Align barcode in frame, then tap Capture'}
             </p>
+          </div>
+        )}
+
+        {scanState === 'decoding' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
+            <Loader2 className="h-8 w-8 animate-spin text-white" />
           </div>
         )}
       </div>
 
       <div className="flex justify-center gap-3">
-        {status === 'idle' || status === 'error' ? (
+        {!isActive ? (
           <button
-            onClick={start}
-            className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+            onClick={startCamera}
+            disabled={scanState === 'starting'}
+            className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors"
           >
             <Camera className="h-4 w-4" />
             Start Scanner
           </button>
         ) : (
-          <button
-            onClick={stop}
-            className="flex items-center gap-2 px-5 py-2 rounded-md border text-sm font-medium hover:bg-accent transition-colors"
-          >
-            <CameraOff className="h-4 w-4" />
-            Stop Scanner
-          </button>
+          <>
+            <button
+              onClick={capture}
+              disabled={scanState !== 'ready'}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors"
+            >
+              {scanState === 'decoding' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+              {scanState === 'decoding' ? 'Scanning…' : 'Capture'}
+            </button>
+            <button
+              onClick={stopCamera}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm hover:bg-accent transition-colors"
+            >
+              <CameraOff className="h-4 w-4" />
+              Stop
+            </button>
+          </>
         )}
       </div>
     </div>
