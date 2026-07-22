@@ -3,11 +3,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ScanLine, Plus, Loader2, X, Check, Camera, CameraOff,
-  Sparkles, Archive, AlertCircle, ChevronDown, RotateCw, Trash2,
+  Sparkles, Archive, AlertCircle, ChevronDown, Trash2,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { useBarcode } from '@/hooks/useBarcode';
-import { useCameraRotation } from '@/hooks/useCameraRotation';
 import type { Wine, Location, WineType } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -120,7 +119,7 @@ function BarcodeCameraModal({
           )}
           {status === 'scanning' && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-3/4 h-32 border-2 border-green-400 rounded-sm opacity-80" />
+              <div className="w-3/4 h-1/2 border-2 border-green-400 rounded-sm opacity-80" />
               <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">Tilt the bottle so the barcode is horizontal, then center it in the frame</p>
             </div>
           )}
@@ -134,8 +133,10 @@ function BarcodeCameraModal({
   );
 }
 
-// ── Label capture modal — mirrors LabelCapture.tsx dual-quality approach ────────
-// gemini: 400×600 @ 0.7 → Gemini API   thumbnail: 150×225 @ 0.35 → DB + display
+// ── Label capture modal — landscape orientation, neck pointing left ──────────────
+// Bottle lies on its side (neck left). Guide box is landscape. After the guide-box
+// crop, the raw canvas is rotated 90° CW so the output is portrait (neck at top)
+// before being sent to Gemini. gemini: 400×600 @ 0.7 → API; thumbnail: 150×225 @ 0.35 → DB
 function LabelCaptureModal({
   onCapture, onClose,
 }: {
@@ -147,12 +148,10 @@ function LabelCaptureModal({
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
-  // Separate storage key from barcode camera so label defaults to 0° (hold bottle upright)
-  const { rotation, rotateNext, videoStyle } = useCameraRotation('labelRotation');
 
   useEffect(() => {
     let mounted = true;
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } } })
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
       .then(stream => {
         if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = stream;
@@ -167,40 +166,37 @@ function LabelCaptureModal({
     if (!video || !ready || processing) return;
     setProcessing(true);
     const nativeW = video.videoWidth, nativeH = video.videoHeight;
-    let raw: HTMLCanvasElement;
 
-    if (rotation === 0) {
-      // Guide-box crop — same logic as LabelCapture.tsx
-      const guide = guideRef.current;
-      if (!guide) { setProcessing(false); return; }
-      const containerRect = video.getBoundingClientRect();
-      const guideRect = guide.getBoundingClientRect();
-      const displayW = containerRect.width, displayH = containerRect.height;
-      const scale = Math.max(displayW / nativeW, displayH / nativeH);
-      const videoOffsetX = (displayW - nativeW * scale) / 2;
-      const videoOffsetY = (displayH - nativeH * scale) / 2;
-      const srcX = Math.max(0, (guideRect.left - containerRect.left - videoOffsetX) / scale);
-      const srcY = Math.max(0, (guideRect.top - containerRect.top - videoOffsetY) / scale);
-      const srcW = Math.min(nativeW - srcX, guideRect.width / scale);
-      const srcH = Math.min(nativeH - srcY, guideRect.height / scale);
-      raw = document.createElement('canvas');
-      raw.width = Math.round(srcW); raw.height = Math.round(srcH);
-      raw.getContext('2d')!.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
-    } else {
-      // Rotated full frame — same logic as LabelCapture.tsx
-      const swap = rotation === 90 || rotation === 270;
-      raw = document.createElement('canvas');
-      raw.width = swap ? nativeH : nativeW; raw.height = swap ? nativeW : nativeH;
-      const ctx = raw.getContext('2d')!;
-      ctx.translate(raw.width / 2, raw.height / 2);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.drawImage(video, -nativeW / 2, -nativeH / 2, nativeW, nativeH);
-    }
+    // Crop the guide-box area from the live video frame
+    const guide = guideRef.current;
+    if (!guide) { setProcessing(false); return; }
+    const containerRect = video.getBoundingClientRect();
+    const guideRect = guide.getBoundingClientRect();
+    const displayW = containerRect.width, displayH = containerRect.height;
+    const scale = Math.max(displayW / nativeW, displayH / nativeH);
+    const videoOffsetX = (displayW - nativeW * scale) / 2;
+    const videoOffsetY = (displayH - nativeH * scale) / 2;
+    const srcX = Math.max(0, (guideRect.left - containerRect.left - videoOffsetX) / scale);
+    const srcY = Math.max(0, (guideRect.top - containerRect.top - videoOffsetY) / scale);
+    const srcW = Math.min(nativeW - srcX, guideRect.width / scale);
+    const srcH = Math.min(nativeH - srcY, guideRect.height / scale);
+    const raw = document.createElement('canvas');
+    raw.width = Math.round(srcW); raw.height = Math.round(srcH);
+    raw.getContext('2d')!.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
+
+    // Rotate 90° CW: landscape crop (neck-left) → portrait (neck-top) for Gemini
+    const rotated = document.createElement('canvas');
+    rotated.width = raw.height;
+    rotated.height = raw.width;
+    const rctx = rotated.getContext('2d')!;
+    rctx.translate(raw.height, 0);
+    rctx.rotate(Math.PI / 2);
+    rctx.drawImage(raw, 0, 0);
 
     try {
       const [gemini, thumbnail] = await Promise.all([
-        resizeToWebP(raw, 400, 600, 0.7),   // high-res → Gemini
-        resizeToWebP(raw, 150, 225, 0.35),  // small   → DB + display
+        resizeToWebP(rotated, 400, 600, 0.7),
+        resizeToWebP(rotated, 150, 225, 0.35),
       ]);
       onCapture(gemini, thumbnail);
       onClose();
@@ -211,47 +207,31 @@ function LabelCaptureModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-card rounded-xl border shadow-2xl overflow-hidden w-full max-w-lg">
+      <div className="bg-card rounded-xl border shadow-2xl overflow-hidden w-full max-w-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <p className="font-semibold text-sm flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Scan Label</p>
-          <div className="flex items-center gap-2">
-            {ready && <button onClick={rotateNext} title={`Rotate (${rotation}°)`} className="p-1.5 rounded-md border text-muted-foreground hover:bg-accent transition-colors"><RotateCw className="h-4 w-4" /></button>}
-            <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
-          </div>
+          <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
         </div>
-        {/*
-          Laptop cameras are landscape-fixed (16:9). Hold the bottle cork-up in the center;
-          the label fills roughly the middle third of the horizontal frame. The guide box is
-          portrait-shaped (2/5 wide × 88% tall) — matching the label proportions without
-          wasting the wide FOV. On mobile the same capture logic works because the phone
-          camera stream is portrait when held portrait.
-        */}
-        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '16/9', maxHeight: '60vh' }}>
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" style={videoStyle} autoPlay muted playsInline />
+        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '16/9' }}>
+          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" autoPlay muted playsInline />
           {!ready && !error && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white"><Loader2 className="h-6 w-6 animate-spin mr-2" /><span className="text-sm">Starting camera…</span></div>}
           {error && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-red-300 text-sm px-6 text-center">{error}</div>}
           {ready && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div ref={guideRef} className="relative w-2/5 h-[88%]">
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-center">
-                  <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">TOP</span>
-                  <div className="w-px h-2 bg-white/60 mx-auto mt-0.5" />
-                </div>
+              <div ref={guideRef} className="relative w-[85%] h-[70%]">
                 <div className="w-full h-full border-2 border-white/80 rounded-md" />
-                <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-center">
-                  <div className="w-px h-2 bg-white/60 mx-auto mb-0.5" />
-                  <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">BTM</span>
+                <div className="absolute left-2 top-1/2 -translate-y-1/2">
+                  <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">NECK</span>
+                </div>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">BASE</span>
                 </div>
               </div>
             </div>
           )}
         </div>
         <div className="px-4 py-2 text-center">
-          <p className="text-xs text-muted-foreground">
-            {rotation === 0
-              ? 'Hold label upright · align within the frame · TOP and BTM mark the correct orientation'
-              : `Camera rotated ${rotation}° · tap the rotate button to adjust if the preview looks wrong`}
-          </p>
+          <p className="text-xs text-muted-foreground">Lay bottle on its side, neck pointing left · align label within the frame · image will be rotated automatically</p>
         </div>
         <div className="px-4 py-3 flex justify-center gap-3">
           <button onClick={capture} disabled={!ready || processing} className="flex items-center gap-2 px-6 py-2 rounded-full bg-white text-black text-sm font-semibold shadow-md disabled:opacity-40 hover:bg-gray-100 transition-colors">

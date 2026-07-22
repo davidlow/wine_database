@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Loader2, X, RotateCw } from 'lucide-react';
-import { useCameraRotation } from '@/hooks/useCameraRotation';
+import { Camera, Loader2, X } from 'lucide-react';
 
 async function resizeToWebP(source: HTMLCanvasElement, maxW: number, maxH: number, quality: number): Promise<string> {
   const ratio = Math.min(maxW / source.width, maxH / source.height);
@@ -32,7 +31,6 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
-  const { rotation, rotateNext, videoStyle } = useCameraRotation();
 
   useEffect(() => {
     let mounted = true;
@@ -42,8 +40,8 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 960 },
+            width: { ideal: 960 },
+            height: { ideal: 1280 },
           },
         });
         if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
@@ -72,47 +70,28 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
     const nativeW = video.videoWidth;
     const nativeH = video.videoHeight;
-    let raw: HTMLCanvasElement;
 
-    if (rotation === 0) {
-      // Use guide-box crop for precise label extraction
-      const guide = guideRef.current;
-      if (!guide) { setProcessing(false); return; }
+    const guide = guideRef.current;
+    if (!guide) { setProcessing(false); return; }
 
-      const containerRect = video.getBoundingClientRect();
-      const guideRect = guide.getBoundingClientRect();
-      const displayW = containerRect.width;
-      const displayH = containerRect.height;
-      const scale = Math.max(displayW / nativeW, displayH / nativeH);
-      const videoOffsetX = (displayW - nativeW * scale) / 2;
-      const videoOffsetY = (displayH - nativeH * scale) / 2;
-      const guideLeft = guideRect.left - containerRect.left;
-      const guideTop = guideRect.top - containerRect.top;
-      const guideW = guideRect.width;
-      const guideH = guideRect.height;
-      const srcX = Math.max(0, (guideLeft - videoOffsetX) / scale);
-      const srcY = Math.max(0, (guideTop - videoOffsetY) / scale);
-      const srcW = Math.min(nativeW - srcX, guideW / scale);
-      const srcH = Math.min(nativeH - srcY, guideH / scale);
+    const containerRect = video.getBoundingClientRect();
+    const guideRect = guide.getBoundingClientRect();
+    const displayW = containerRect.width;
+    const displayH = containerRect.height;
+    const scale = Math.max(displayW / nativeW, displayH / nativeH);
+    const videoOffsetX = (displayW - nativeW * scale) / 2;
+    const videoOffsetY = (displayH - nativeH * scale) / 2;
+    const srcX = Math.max(0, (guideRect.left - containerRect.left - videoOffsetX) / scale);
+    const srcY = Math.max(0, (guideRect.top - containerRect.top - videoOffsetY) / scale);
+    const srcW = Math.min(nativeW - srcX, guideRect.width / scale);
+    const srcH = Math.min(nativeH - srcY, guideRect.height / scale);
 
-      raw = document.createElement('canvas');
-      raw.width = Math.round(srcW);
-      raw.height = Math.round(srcH);
-      const ctx = raw.getContext('2d');
-      if (!ctx) { setProcessing(false); return; }
-      ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
-    } else {
-      // Rotate the full frame so Gemini receives a correctly-oriented image
-      const swap = rotation === 90 || rotation === 270;
-      raw = document.createElement('canvas');
-      raw.width = swap ? nativeH : nativeW;
-      raw.height = swap ? nativeW : nativeH;
-      const ctx = raw.getContext('2d');
-      if (!ctx) { setProcessing(false); return; }
-      ctx.translate(raw.width / 2, raw.height / 2);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.drawImage(video, -nativeW / 2, -nativeH / 2, nativeW, nativeH);
-    }
+    const raw = document.createElement('canvas');
+    raw.width = Math.round(srcW);
+    raw.height = Math.round(srcH);
+    const ctx = raw.getContext('2d');
+    if (!ctx) { setProcessing(false); return; }
+    ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, raw.width, raw.height);
 
     try {
       const [gemini, thumbnail] = await Promise.all([
@@ -127,26 +106,15 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="relative rounded-lg overflow-hidden bg-black aspect-video w-full max-w-md mx-auto">
+      {/* Portrait container — tall and narrow for maximum vertical label coverage */}
+      <div className="relative rounded-lg overflow-hidden bg-black aspect-[3/4] w-full max-w-sm mx-auto">
         <video
           ref={videoRef}
           className="w-full h-full object-cover"
-          style={videoStyle}
           autoPlay
           muted
           playsInline
         />
-
-        {/* Rotate button */}
-        {ready && (
-          <button
-            onClick={rotateNext}
-            className="absolute top-2 right-2 z-10 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70 transition-colors"
-            title={`Rotate camera (currently ${rotation}°)`}
-          >
-            <RotateCw className="h-4 w-4" />
-          </button>
-        )}
 
         {!ready && !error && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/70 text-white">
@@ -163,7 +131,7 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
 
         {ready && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div ref={guideRef} className="relative w-1/2 h-[88%]">
+            <div ref={guideRef} className="relative w-[80%] h-[85%]">
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-center">
                 <span className="text-white text-[9px] font-bold tracking-widest uppercase bg-black/50 px-1.5 py-0.5 rounded">
                   TOP
@@ -183,9 +151,7 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        {rotation === 0
-          ? 'Hold label upright · align within the frame · TOP and BTM mark the correct orientation'
-          : `Camera rotated ${rotation}° · tap the rotate button to adjust if the preview looks wrong`}
+        Hold label upright · align within the frame · TOP and BTM mark the correct orientation
       </p>
 
       <div className="flex justify-center gap-3">
