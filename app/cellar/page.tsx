@@ -9,6 +9,8 @@ import {
 import { cn } from '@/lib/utils';
 import type { CellarInventory, Location, LocationGroup } from '@/types';
 import BottleMover from '@/components/BottleMover';
+import BulkAddLocationsModal from '@/components/bulk-add/BulkAddLocationsModal';
+import EditAllLocationsModal from '@/components/bulk-add/EditAllLocationsModal';
 
 type SortMode = 'name' | 'date' | 'drink';
 type WineTypeFilter = 'all' | 'red' | 'white' | 'rosé' | 'sparkling' | 'other';
@@ -64,6 +66,8 @@ export default function CellarPage() {
 
   const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [editAllOpen, setEditAllOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 192;
     return Number(localStorage.getItem('cellarSidebarWidth') || 192);
@@ -432,7 +436,19 @@ export default function CellarPage() {
                 })
               )}
             </nav>
-            <div className="px-3 pb-3 pt-1 border-t">
+            <div className="px-3 pb-3 pt-1 border-t space-y-1">
+              <button
+                onClick={() => setBulkAddOpen(true)}
+                className="block w-full text-left text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                Bulk Add Locations →
+              </button>
+              <button
+                onClick={() => setEditAllOpen(true)}
+                className="block w-full text-left text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                Edit All Locations →
+              </button>
               <a
                 href="/cellar/hierarchy"
                 className="block text-xs text-muted-foreground hover:text-primary transition-colors"
@@ -685,6 +701,25 @@ export default function CellarPage() {
           </div>
         )}
       </div>
+
+      {/* Bulk location modals */}
+      {profileId && (
+        <>
+          <BulkAddLocationsModal
+            open={bulkAddOpen}
+            onClose={() => setBulkAddOpen(false)}
+            profileId={profileId}
+            groups={locationGroups}
+            onSuccess={loadLocations}
+          />
+          <EditAllLocationsModal
+            open={editAllOpen}
+            onClose={() => setEditAllOpen(false)}
+            profileId={profileId}
+            onSuccess={loadLocations}
+          />
+        </>
+      )}
 
       {/* BottleMover dialog */}
       {moverWine && (
