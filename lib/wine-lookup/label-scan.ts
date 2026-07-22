@@ -285,6 +285,94 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
   };
 }
 
+// Text-only enrichment — no image. Used when a wine was identified from a menu scan
+// (no label photo available). Gemini uses search grounding to fill structural scores.
+export async function enrichWineByText(identity: {
+  name: string;
+  producer?: string;
+  vintage_year?: number;
+  variety?: string;
+  wine_type?: string;
+  region?: string;
+  country?: string;
+}): Promise<WineLookupResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
+
+  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  const useGrounding = process.env.GEMINI_GROUNDING !== 'false';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const desc = [
+    identity.name,
+    identity.producer && `by ${identity.producer}`,
+    identity.vintage_year && `(${identity.vintage_year})`,
+    identity.variety,
+    identity.region ?? identity.country,
+  ].filter(Boolean).join(' ');
+
+  const text = `${PROMPT}\n\nWine to look up (no image — use Google Search to find this wine):\n${desc}`;
+
+  const body = {
+    contents: [{ parts: [{ text }] }],
+    ...(useGrounding ? { tools: [{ google_search: {} }] } : {}),
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const json = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message: string } };
+  if (!res.ok || json.error) throw new Error(json.error?.message ?? `Gemini API error ${res.status}`);
+
+  const responseText = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  if (!responseText) throw new Error('Empty response from Gemini');
+
+  const data = extractJson(responseText);
+  if (!data.name) throw new Error('Could not identify wine from text description');
+
+  const validTags = new Set(CUISINE_TAGS as readonly string[]);
+  return {
+    found: true,
+    name: data.name ?? identity.name,
+    producer: data.producer ?? identity.producer,
+    vintage_year: data.vintage_year ?? identity.vintage_year,
+    variety: data.variety ?? identity.variety,
+    wine_type: (data.wine_type ?? identity.wine_type) as import('@/types').WineType | undefined,
+    region: data.region,
+    appellation: data.appellation,
+    country: data.country,
+    alcohol_content: data.alcohol_content,
+    average_price: data.average_price,
+    drink_from_year: data.drink_from_year,
+    drink_by_year: data.drink_by_year,
+    description: data.description,
+    acidity: clampScore(data.acidity),
+    tannin: clampScore(data.tannin),
+    alcohol: clampScore(data.alcohol),
+    sweetness: clampScore(data.sweetness),
+    body: clampScore(data.body),
+    minerality: clampScore(data.minerality),
+    oak_influence: clampScore(data.oak_influence),
+    fruit_intensity: clampScore(data.fruit_intensity),
+    fruit_profile: data.fruit_profile,
+    food_pairings: Array.isArray(data.food_pairings)
+      ? data.food_pairings.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+      : undefined,
+    pairing_weight: (['delicate', 'light', 'medium', 'full', 'robust'] as const).includes(data.pairing_weight as import('@/types').PairingWeight)
+      ? data.pairing_weight as import('@/types').PairingWeight
+      : undefined,
+    cuisine_tags: Array.isArray(data.cuisine_tags)
+      ? data.cuisine_tags.filter((t): t is string => typeof t === 'string' && validTags.has(t))
+      : undefined,
+    pairing_rationale: typeof data.pairing_rationale === 'string' && data.pairing_rationale.trim() ? data.pairing_rationale.trim() : undefined,
+    source: 'label-scan',
+    confidence: data.confidence,
+  };
+}
+
 export interface BatchLabelResult extends Partial<WineLookupResult> {
   id: string;
   found: boolean;

@@ -246,3 +246,40 @@ CREATE TABLE IF NOT EXISTS cellar_shares (
 
 CREATE INDEX IF NOT EXISTS idx_shares_profile_id ON cellar_shares(profile_id);
 CREATE INDEX IF NOT EXISTS idx_shares_shared_with ON cellar_shares(shared_with_user_id);
+
+-- Wine discovery sessions: restaurant, winery, wine bar visits
+CREATE TABLE IF NOT EXISTS wine_discovery_sessions (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  session_code TEXT NOT NULL,   -- YYYY-MM-DD_HHmm auto-generated at creation
+  venue_name TEXT,
+  venue_type TEXT CHECK (venue_type IN ('restaurant', 'winery', 'wine_bar', 'retail', 'other')),
+  gps_lat REAL,
+  gps_lng REAL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_discovery_sessions_profile ON wine_discovery_sessions(profile_id);
+
+-- Individual wines within a discovery session
+CREATE TABLE IF NOT EXISTS discovery_session_wines (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES wine_discovery_sessions(id) ON DELETE CASCADE,
+  wine_id TEXT REFERENCES wines(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  producer TEXT,
+  vintage_year INTEGER,
+  variety TEXT,
+  wine_type TEXT,
+  bin_number TEXT,
+  venue_price REAL,
+  market_price REAL,
+  label_image TEXT,             -- base64 WebP from bottle scan (omit from list queries)
+  notes TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dsw_session_id ON discovery_session_wines(session_id);
+CREATE INDEX IF NOT EXISTS idx_dsw_wine_id ON discovery_session_wines(wine_id);

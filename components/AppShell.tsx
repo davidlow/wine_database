@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import {
   Home, Wine, ScanLine, Layers, BarChart2, Building2,
   UtensilsCrossed, Snowflake, ShoppingBasket, Moon, Sun, Menu, X,
-  Archive, Shuffle, Monitor, ChevronDown, ChevronRight,
+  Archive, Shuffle, Monitor, ChevronDown, ChevronRight, ScanSearch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProfileSelector from './ProfileSelector';
@@ -23,6 +23,7 @@ const STANDARD_LINKS: NavLink[] = [
   { href: '/scanner', label: 'Scanner', Icon: ScanLine },
   { href: '/profiles', label: 'Cellar', Icon: Archive, desktopCellar: true },
   { href: '/defragment', label: 'Defragment', Icon: Shuffle },
+  { href: '/discover', label: 'Discover', Icon: ScanSearch },
   { href: '/food-pairings', label: 'Food Pairings', Icon: UtensilsCrossed },
   { href: '/freezer', label: 'Freezer', Icon: Snowflake },
   { href: '/pantry', label: 'Pantry', Icon: ShoppingBasket },

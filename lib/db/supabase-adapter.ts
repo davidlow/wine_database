@@ -23,6 +23,9 @@ import type {
   PantryTransaction,
   AddPantryInput,
   PantryUsageSetting,
+  WineDiscoverySession,
+  DiscoverySessionWine,
+  WinePriceHistoryEntry,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
@@ -98,6 +101,21 @@ export const supabaseAdapter: DbAdapter = {
       }
     } else {
       query = query.order('name');
+    }
+
+    // Filter to wines that exist in the specified profiles' inventory with qty > 0
+    if (params.profile_ids) {
+      const ids = params.profile_ids.split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length > 0) {
+        const { data: inv } = await getSupabaseAdmin()
+          .from('cellar_inventory')
+          .select('wine_id')
+          .in('profile_id', ids)
+          .gt('quantity', 0);
+        const wineIds = [...new Set((inv ?? []).map((r: { wine_id: string }) => r.wine_id))];
+        if (wineIds.length === 0) return [];
+        query = query.in('id', wineIds);
+      }
     }
 
     const { data, error } = await query;
@@ -943,5 +961,134 @@ export const supabaseAdapter: DbAdapter = {
       .select().single();
     if (error) throw error;
     return data as PantryUsageSetting;
+  },
+
+  // --- Discovery Sessions ---
+
+  async createDiscoverySession(data: Omit<WineDiscoverySession, 'id' | 'created_at'>): Promise<WineDiscoverySession> {
+    const now = new Date().toISOString();
+    const session = { ...data, id: generateId(), created_at: now };
+    const { data: created, error } = await getSupabaseAdmin()
+      .from('wine_discovery_sessions').insert(session).select().single();
+    if (error) throw error;
+    return created as WineDiscoverySession;
+  },
+
+  async getDiscoverySessions(profileId: string): Promise<WineDiscoverySession[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('wine_discovery_sessions').select('*').eq('profile_id', profileId).order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as WineDiscoverySession[];
+  },
+
+  async getDiscoverySession(id: string): Promise<WineDiscoverySession | null> {
+    const { data } = await getSupabaseAdmin().from('wine_discovery_sessions').select('*').eq('id', id).single();
+    return (data as WineDiscoverySession) ?? null;
+  },
+
+  async updateDiscoverySession(id: string, data: Partial<Omit<WineDiscoverySession, 'id' | 'profile_id' | 'created_at'>>): Promise<WineDiscoverySession> {
+    const { data: updated, error } = await getSupabaseAdmin()
+      .from('wine_discovery_sessions').update(data).eq('id', id).select().single();
+    if (error) throw error;
+    return updated as WineDiscoverySession;
+  },
+
+  async deleteDiscoverySession(id: string): Promise<void> {
+    await getSupabaseAdmin().from('wine_discovery_sessions').delete().eq('id', id);
+  },
+
+  // --- Discovery Session Wines ---
+
+  async getSessionWines(sessionId: string): Promise<DiscoverySessionWine[]> {
+    const { data, error } = await getSupabaseAdmin()
+      .from('discovery_session_wines')
+      .select('id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, notes, sort_order, created_at')
+      .eq('session_id', sessionId)
+      .order('sort_order').order('created_at');
+    if (error) throw error;
+    return (data ?? []) as DiscoverySessionWine[];
+  },
+
+  async getSessionWineById(id: string): Promise<DiscoverySessionWine | null> {
+    const { data } = await getSupabaseAdmin().from('discovery_session_wines').select('*').eq('id', id).single();
+    return (data as DiscoverySessionWine) ?? null;
+  },
+
+  async addSessionWine(data: Omit<DiscoverySessionWine, 'id' | 'created_at'>): Promise<DiscoverySessionWine> {
+    const now = new Date().toISOString();
+    const row = { ...data, id: generateId(), created_at: now };
+    const { data: created, error } = await getSupabaseAdmin()
+      .from('discovery_session_wines').insert(row).select('id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, notes, sort_order, created_at').single();
+    if (error) throw error;
+    return created as DiscoverySessionWine;
+  },
+
+  async bulkAddSessionWines(sessionId: string, wines: Omit<DiscoverySessionWine, 'id' | 'created_at'>[]): Promise<DiscoverySessionWine[]> {
+    const now = new Date().toISOString();
+    const rows = wines.map((w, i) => ({ ...w, session_id: sessionId, sort_order: w.sort_order ?? i, id: generateId(), created_at: now }));
+    const { data, error } = await getSupabaseAdmin()
+      .from('discovery_session_wines').insert(rows)
+      .select('id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, notes, sort_order, created_at');
+    if (error) throw error;
+    return (data ?? []) as DiscoverySessionWine[];
+  },
+
+  async updateSessionWine(id: string, data: Partial<Omit<DiscoverySessionWine, 'id' | 'session_id' | 'created_at'>>): Promise<DiscoverySessionWine> {
+    const { data: updated, error } = await getSupabaseAdmin()
+      .from('discovery_session_wines').update(data).eq('id', id)
+      .select('id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, notes, sort_order, created_at').single();
+    if (error) throw error;
+    return updated as DiscoverySessionWine;
+  },
+
+  async deleteSessionWine(id: string): Promise<void> {
+    await getSupabaseAdmin().from('discovery_session_wines').delete().eq('id', id);
+  },
+
+  async getSessionWineProfileId(id: string): Promise<string | null> {
+    const { data } = await getSupabaseAdmin()
+      .from('discovery_session_wines')
+      .select('wine_discovery_sessions(profile_id)')
+      .eq('id', id)
+      .single();
+    const d = data as { wine_discovery_sessions?: { profile_id: string } } | null;
+    return d?.wine_discovery_sessions?.profile_id ?? null;
+  },
+
+  async getWinePriceHistory(wineId: string, profileId: string, venueName?: string): Promise<WinePriceHistoryEntry[]> {
+    let q = getSupabaseAdmin()
+      .from('discovery_session_wines')
+      .select('venue_price, wine_discovery_sessions!inner(session_code, venue_name, profile_id, created_at)')
+      .eq('wine_id', wineId)
+      .not('venue_price', 'is', null);
+    if (venueName) q = q.eq('wine_discovery_sessions.venue_name', venueName);
+    const { data, error } = await q;
+    if (error) throw error;
+    type Row = { venue_price: number; wine_discovery_sessions: Array<{ session_code: string; venue_name?: string; profile_id: string; created_at: string }> };
+    return ((data ?? []) as Row[])
+      .filter(r => r.wine_discovery_sessions?.[0]?.profile_id === profileId)
+      .map(r => ({
+        session_code: r.wine_discovery_sessions[0]?.session_code ?? '',
+        venue_name: r.wine_discovery_sessions[0]?.venue_name,
+        venue_price: r.venue_price,
+        created_at: r.wine_discovery_sessions[0]?.created_at ?? '',
+      }))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  },
+
+  async getCellarCounts(profileId: string, wineIds: string[]): Promise<Map<string, number>> {
+    if (wineIds.length === 0) return new Map();
+    const { data } = await getSupabaseAdmin()
+      .from('cellar_inventory')
+      .select('wine_id, quantity')
+      .eq('profile_id', profileId)
+      .in('wine_id', wineIds)
+      .gt('quantity', 0);
+    const counts = new Map<string, number>();
+    for (const row of (data ?? [])) {
+      const r = row as { wine_id: string; quantity: number };
+      counts.set(r.wine_id, (counts.get(r.wine_id) ?? 0) + r.quantity);
+    }
+    return counts;
   },
 };

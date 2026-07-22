@@ -23,6 +23,9 @@ import type {
   PantryTransaction,
   AddPantryInput,
   PantryUsageSetting,
+  WineDiscoverySession,
+  DiscoverySessionWine,
+  WinePriceHistoryEntry,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
@@ -62,6 +65,7 @@ function runMigrations(conn: Database.Database): void {
   try { conn.exec('ALTER TABLE wines ADD COLUMN oak_influence REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_intensity REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN pairing_rationale TEXT'); } catch {}
+  // Discovery sessions tables are created via schema.sql IF NOT EXISTS — no ALTER needed
 }
 
 function openDb(resolvedPath: string): Database.Database {
@@ -1120,5 +1124,160 @@ export const sqliteAdapter: DbAdapter = {
       'INSERT INTO pantry_usage_settings (id, profile_id, item_name, days_per_unit, reset_date, date_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, profileId, itemName, updates.days_per_unit ?? null, updates.reset_date ?? null, updates.date_mode ?? 'full', now, now);
     return d.prepare('SELECT * FROM pantry_usage_settings WHERE id = ?').get(id) as PantryUsageSetting;
+  },
+
+  // --- Discovery Sessions ---
+
+  async createDiscoverySession(data: Omit<WineDiscoverySession, 'id' | 'created_at'>): Promise<WineDiscoverySession> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const session: WineDiscoverySession = { ...data, id: generateId(), created_at: now };
+    d.prepare(`
+      INSERT INTO wine_discovery_sessions (id, profile_id, session_code, venue_name, venue_type, gps_lat, gps_lng, notes, created_at)
+      VALUES (@id, @profile_id, @session_code, @venue_name, @venue_type, @gps_lat, @gps_lng, @notes, @created_at)
+    `).run(nullify(session as unknown as Record<string, unknown>, ['id', 'profile_id', 'session_code', 'venue_name', 'venue_type', 'gps_lat', 'gps_lng', 'notes', 'created_at']));
+    return session;
+  },
+
+  async getDiscoverySessions(profileId: string): Promise<WineDiscoverySession[]> {
+    return getDb().prepare(
+      'SELECT * FROM wine_discovery_sessions WHERE profile_id = ? ORDER BY created_at DESC'
+    ).all(profileId) as WineDiscoverySession[];
+  },
+
+  async getDiscoverySession(id: string): Promise<WineDiscoverySession | null> {
+    return (getDb().prepare('SELECT * FROM wine_discovery_sessions WHERE id = ?').get(id) as WineDiscoverySession) ?? null;
+  },
+
+  async updateDiscoverySession(id: string, data: Partial<Omit<WineDiscoverySession, 'id' | 'profile_id' | 'created_at'>>): Promise<WineDiscoverySession> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM wine_discovery_sessions WHERE id = ?').get(id) as WineDiscoverySession | undefined;
+    if (!existing) throw new Error(`Discovery session ${id} not found`);
+    const updated = { ...existing, ...data };
+    d.prepare(`
+      UPDATE wine_discovery_sessions
+      SET session_code = ?, venue_name = ?, venue_type = ?, gps_lat = ?, gps_lng = ?, notes = ?
+      WHERE id = ?
+    `).run(
+      updated.session_code,
+      updated.venue_name ?? null,
+      updated.venue_type ?? null,
+      updated.gps_lat ?? null,
+      updated.gps_lng ?? null,
+      updated.notes ?? null,
+      id,
+    );
+    return d.prepare('SELECT * FROM wine_discovery_sessions WHERE id = ?').get(id) as WineDiscoverySession;
+  },
+
+  async deleteDiscoverySession(id: string): Promise<void> {
+    getDb().prepare('DELETE FROM wine_discovery_sessions WHERE id = ?').run(id);
+  },
+
+  // --- Discovery Session Wines ---
+
+  async getSessionWines(sessionId: string): Promise<DiscoverySessionWine[]> {
+    return getDb().prepare(
+      'SELECT id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, notes, sort_order, created_at FROM discovery_session_wines WHERE session_id = ? ORDER BY sort_order ASC, created_at ASC'
+    ).all(sessionId) as DiscoverySessionWine[];
+  },
+
+  async getSessionWineById(id: string): Promise<DiscoverySessionWine | null> {
+    return (getDb().prepare('SELECT * FROM discovery_session_wines WHERE id = ?').get(id) as DiscoverySessionWine) ?? null;
+  },
+
+  async addSessionWine(data: Omit<DiscoverySessionWine, 'id' | 'created_at'>): Promise<DiscoverySessionWine> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const row: DiscoverySessionWine = { ...data, id: generateId(), created_at: now };
+    const COLS = ['id', 'session_id', 'wine_id', 'name', 'producer', 'vintage_year', 'variety', 'wine_type', 'bin_number', 'venue_price', 'market_price', 'label_image', 'notes', 'sort_order', 'created_at'] as const;
+    d.prepare(`
+      INSERT INTO discovery_session_wines (id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, label_image, notes, sort_order, created_at)
+      VALUES (@id, @session_id, @wine_id, @name, @producer, @vintage_year, @variety, @wine_type, @bin_number, @venue_price, @market_price, @label_image, @notes, @sort_order, @created_at)
+    `).run(nullify(row as unknown as Record<string, unknown>, COLS));
+    const { label_image: _, ...withoutImage } = row;
+    return withoutImage as DiscoverySessionWine;
+  },
+
+  async bulkAddSessionWines(sessionId: string, wines: Omit<DiscoverySessionWine, 'id' | 'created_at'>[]): Promise<DiscoverySessionWine[]> {
+    const d = getDb();
+    const now = new Date().toISOString();
+    const COLS = ['id', 'session_id', 'wine_id', 'name', 'producer', 'vintage_year', 'variety', 'wine_type', 'bin_number', 'venue_price', 'market_price', 'label_image', 'notes', 'sort_order', 'created_at'] as const;
+    const stmt = d.prepare(`
+      INSERT INTO discovery_session_wines (id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, label_image, notes, sort_order, created_at)
+      VALUES (@id, @session_id, @wine_id, @name, @producer, @vintage_year, @variety, @wine_type, @bin_number, @venue_price, @market_price, @label_image, @notes, @sort_order, @created_at)
+    `);
+    const results: DiscoverySessionWine[] = [];
+    const insertMany = d.transaction(() => {
+      wines.forEach((w, i) => {
+        const row: DiscoverySessionWine = { ...w, session_id: sessionId, sort_order: w.sort_order ?? i, id: generateId(), created_at: now };
+        stmt.run(nullify(row as unknown as Record<string, unknown>, COLS));
+        const { label_image: _, ...withoutImage } = row;
+        results.push(withoutImage as DiscoverySessionWine);
+      });
+    });
+    insertMany();
+    return results;
+  },
+
+  async updateSessionWine(id: string, data: Partial<Omit<DiscoverySessionWine, 'id' | 'session_id' | 'created_at'>>): Promise<DiscoverySessionWine> {
+    const d = getDb();
+    const existing = d.prepare('SELECT * FROM discovery_session_wines WHERE id = ?').get(id) as DiscoverySessionWine | undefined;
+    if (!existing) throw new Error(`Session wine ${id} not found`);
+    const u = { ...existing, ...data };
+    d.prepare(`
+      UPDATE discovery_session_wines
+      SET wine_id = ?, name = ?, producer = ?, vintage_year = ?, variety = ?, wine_type = ?,
+          bin_number = ?, venue_price = ?, market_price = ?, label_image = ?, notes = ?, sort_order = ?
+      WHERE id = ?
+    `).run(
+      u.wine_id ?? null, u.name, u.producer ?? null, u.vintage_year ?? null,
+      u.variety ?? null, u.wine_type ?? null, u.bin_number ?? null,
+      u.venue_price ?? null, u.market_price ?? null, u.label_image ?? null,
+      u.notes ?? null, u.sort_order, id,
+    );
+    const updated = d.prepare('SELECT id, session_id, wine_id, name, producer, vintage_year, variety, wine_type, bin_number, venue_price, market_price, notes, sort_order, created_at FROM discovery_session_wines WHERE id = ?').get(id) as DiscoverySessionWine;
+    return updated;
+  },
+
+  async deleteSessionWine(id: string): Promise<void> {
+    getDb().prepare('DELETE FROM discovery_session_wines WHERE id = ?').run(id);
+  },
+
+  async getSessionWineProfileId(id: string): Promise<string | null> {
+    const row = getDb().prepare(`
+      SELECT s.profile_id FROM discovery_session_wines w
+      JOIN wine_discovery_sessions s ON s.id = w.session_id
+      WHERE w.id = ?
+    `).get(id) as { profile_id: string } | undefined;
+    return row?.profile_id ?? null;
+  },
+
+  async getWinePriceHistory(wineId: string, profileId: string, venueName?: string): Promise<WinePriceHistoryEntry[]> {
+    const sql = venueName
+      ? `SELECT s.session_code, s.venue_name, w.venue_price, s.created_at
+         FROM discovery_session_wines w
+         JOIN wine_discovery_sessions s ON s.id = w.session_id
+         WHERE w.wine_id = ? AND s.profile_id = ? AND s.venue_name = ? AND w.venue_price IS NOT NULL
+         ORDER BY s.created_at ASC`
+      : `SELECT s.session_code, s.venue_name, w.venue_price, s.created_at
+         FROM discovery_session_wines w
+         JOIN wine_discovery_sessions s ON s.id = w.session_id
+         WHERE w.wine_id = ? AND s.profile_id = ? AND w.venue_price IS NOT NULL
+         ORDER BY s.created_at ASC`;
+    const args = venueName ? [wineId, profileId, venueName] : [wineId, profileId];
+    return getDb().prepare(sql).all(...args) as WinePriceHistoryEntry[];
+  },
+
+  async getCellarCounts(profileId: string, wineIds: string[]): Promise<Map<string, number>> {
+    if (wineIds.length === 0) return new Map();
+    const ph = wineIds.map(() => '?').join(', ');
+    const rows = getDb().prepare(`
+      SELECT wine_id, SUM(quantity) as total
+      FROM cellar_inventory
+      WHERE profile_id = ? AND wine_id IN (${ph}) AND quantity > 0
+      GROUP BY wine_id
+    `).all(profileId, ...wineIds) as { wine_id: string; total: number }[];
+    return new Map(rows.map(r => [r.wine_id, r.total]));
   },
 };

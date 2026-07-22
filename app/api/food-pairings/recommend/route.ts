@@ -94,8 +94,10 @@ export async function POST(request: NextRequest) {
     }
     const seedWines = [...seedMap.values()];
 
-    const candidateParams = profile_ids?.length ? { profile_ids: profile_ids.join(',') } : {};
-    const candidateWines = await db.getWines(candidateParams);
+    if (!profile_ids?.length) {
+      return NextResponse.json({ groups: [], seed_count: seedWines.length, candidate_count: 0 });
+    }
+    const candidateWines = await db.getWines({ profile_ids: profile_ids.join(',') });
 
     const result = await runPythonRecommender({
       seed_wines: seedWines,

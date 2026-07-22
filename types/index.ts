@@ -379,6 +379,69 @@ export interface AddFreezerInput {
   notes?: string;
 }
 
+export type VenueType = 'restaurant' | 'winery' | 'wine_bar' | 'retail' | 'other';
+
+export interface WineDiscoverySession {
+  id: string;
+  profile_id: string;
+  session_code: string;
+  venue_name?: string;
+  venue_type?: VenueType;
+  gps_lat?: number;
+  gps_lng?: number;
+  notes?: string;
+  created_at: string;
+}
+
+export interface DiscoverySessionWine {
+  id: string;
+  session_id: string;
+  wine_id?: string;
+  name: string;
+  producer?: string;
+  vintage_year?: number;
+  variety?: string;
+  wine_type?: WineType;
+  bin_number?: string;
+  venue_price?: number;
+  market_price?: number;
+  // label_image is omitted from list queries for performance
+  label_image?: string;
+  notes?: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface SimilarWineResult {
+  wine: Wine;
+  distance: number;
+  cellar_count: number;
+}
+
+export interface WineSimilarityResponse {
+  similar: SimilarWineResult[];
+  price_stats: { mean: number; std: number; min: number; max: number; count: number } | null;
+}
+
+export interface DiscoveredWineExtracted {
+  name: string;
+  producer?: string;
+  vintage_year?: number;
+  variety?: string;
+  wine_type?: string;
+  bin_number?: string;
+  venue_price?: number;
+  market_price?: number;
+  notes?: string;
+}
+
+export interface WinePriceHistoryEntry {
+  session_code: string;
+  venue_name?: string;
+  venue_price: number;
+  created_at: string;
+}
+
 export interface DbAdapter {
   // Wines
   getWines(params: WineSearchParams): Promise<Wine[]>;
@@ -477,4 +540,26 @@ export interface DbAdapter {
   getInventoryProfileId(inventoryId: string): Promise<string | null>;
   getLocationProfileId(locationId: string): Promise<string | null>;
   getFreezerItemProfileId(itemId: string): Promise<string | null>;
+
+  // Discovery sessions
+  createDiscoverySession(data: Omit<WineDiscoverySession, 'id' | 'created_at'>): Promise<WineDiscoverySession>;
+  getDiscoverySessions(profileId: string): Promise<WineDiscoverySession[]>;
+  getDiscoverySession(id: string): Promise<WineDiscoverySession | null>;
+  updateDiscoverySession(id: string, data: Partial<Omit<WineDiscoverySession, 'id' | 'profile_id' | 'created_at'>>): Promise<WineDiscoverySession>;
+  deleteDiscoverySession(id: string): Promise<void>;
+
+  // Discovery session wines
+  getSessionWines(sessionId: string): Promise<DiscoverySessionWine[]>;
+  getSessionWineById(id: string): Promise<DiscoverySessionWine | null>;
+  addSessionWine(data: Omit<DiscoverySessionWine, 'id' | 'created_at'>): Promise<DiscoverySessionWine>;
+  bulkAddSessionWines(sessionId: string, wines: Omit<DiscoverySessionWine, 'id' | 'created_at'>[]): Promise<DiscoverySessionWine[]>;
+  updateSessionWine(id: string, data: Partial<Omit<DiscoverySessionWine, 'id' | 'session_id' | 'created_at'>>): Promise<DiscoverySessionWine>;
+  deleteSessionWine(id: string): Promise<void>;
+  getSessionWineProfileId(id: string): Promise<string | null>;
+
+  // Wine price history across discovery sessions
+  getWinePriceHistory(wineId: string, profileId: string, venueName?: string): Promise<WinePriceHistoryEntry[]>;
+
+  // Cellar counts for a set of wine IDs (used by similarity search)
+  getCellarCounts(profileId: string, wineIds: string[]): Promise<Map<string, number>>;
 }
