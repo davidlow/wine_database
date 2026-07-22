@@ -80,8 +80,8 @@ function blankRow(): ScanRow {
   };
 }
 
-// ── Portrait barcode camera modal ─────────────────────────────────────────────
-function PortraitCameraModal({
+// ── Barcode camera modal — landscape, no rotation ─────────────────────────────
+function BarcodeCameraModal({
   onDetected, onClose,
 }: { onDetected: (barcode: string) => void; onClose: () => void }) {
   const handleDetected = useCallback((code: string) => {
@@ -90,7 +90,6 @@ function PortraitCameraModal({
   }, [onDetected, onClose]);
 
   const { videoRef, status, error, start, stop } = useBarcode(handleDetected);
-  const { rotation, rotateNext, videoStyle } = useCameraRotation('barcodeRotation');
 
   useEffect(() => {
     start();
@@ -103,22 +102,13 @@ function PortraitCameraModal({
       <div className="bg-card rounded-xl border shadow-2xl overflow-hidden w-full max-w-lg">
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <p className="font-semibold text-sm flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Scan Barcode</p>
-          <div className="flex items-center gap-2">
-            {status === 'scanning' && (
-              <button onClick={rotateNext} title={`Rotate (${rotation}°)`} className="p-1.5 rounded-md border text-muted-foreground hover:bg-accent transition-colors">
-                <RotateCw className="h-4 w-4" />
-              </button>
-            )}
-            <button onClick={() => { stop(); onClose(); }} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
-          </div>
+          <button onClick={() => { stop(); onClose(); }} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><X className="h-4 w-4" /></button>
         </div>
 
-        {/* Portrait-oriented camera area: swapped aspect so it appears taller on screen */}
-        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '9/12', maxHeight: '70vh' }}>
+        <div className="relative bg-black overflow-hidden" style={{ aspectRatio: '4/3', maxHeight: '60vh' }}>
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover"
-            style={videoStyle ?? { transform: 'rotate(90deg) scale(1.78)' }}
             autoPlay muted playsInline
           />
           {status !== 'scanning' && (
@@ -130,14 +120,14 @@ function PortraitCameraModal({
           )}
           {status === 'scanning' && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-16 h-3/4 border-2 border-green-400 rounded-sm opacity-80" />
-              <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">Align barcode — hold bottle upright</p>
+              <div className="w-3/4 h-16 border-2 border-green-400 rounded-sm opacity-80" />
+              <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-green-300">Rotate the bottle so the barcode is horizontal, then align in the frame</p>
             </div>
           )}
         </div>
 
         <div className="px-4 py-3 text-center">
-          <p className="text-xs text-muted-foreground">Camera rotated 90° for vertical bottles. Use the rotate button to adjust.</p>
+          <p className="text-xs text-muted-foreground">Tilt the bottle sideways so the barcode lines run left-to-right.</p>
         </div>
       </div>
     </div>
@@ -695,6 +685,7 @@ export default function DesktopScannerPage() {
                           readOnly={isSaved}
                           onChange={e => updateRow(row.id, { barcode: e.target.value })}
                           onKeyDown={e => { if (e.key === 'Enter' && row.barcode.trim()) lookupBarcode(row.id, row.barcode); }}
+                          onBlur={e => { if (e.target.value.trim() && !isSaved) lookupBarcode(row.id, e.target.value.trim()); }}
                           placeholder="Barcode…"
                           className={cn(inp, 'flex-1', isSaved && 'opacity-60')}
                         />
@@ -713,14 +704,24 @@ export default function DesktopScannerPage() {
                           <img src={`data:image/webp;base64,${row.labelThumbnail}`} alt="Label" className="w-10 h-12 object-cover rounded border" />
                         </button>
                       ) : (
-                        <button
-                          onClick={() => setLabelRowId(row.id)}
-                          disabled={isSaved}
-                          title="Scan label with Gemini AI"
-                          className="h-10 w-10 flex items-center justify-center rounded border text-muted-foreground hover:text-primary hover:bg-accent transition-colors disabled:opacity-40"
-                        >
-                          <Camera className="h-4 w-4" />
-                        </button>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            onClick={() => setLabelRowId(row.id)}
+                            disabled={isSaved}
+                            title={row.status === 'found' ? 'Wrong wine? Scan label with Gemini to override' : 'Scan label with Gemini AI'}
+                            className={cn(
+                              'h-10 w-10 flex items-center justify-center rounded border transition-colors disabled:opacity-40',
+                              row.status === 'found'
+                                ? 'text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                : 'text-muted-foreground hover:text-primary hover:bg-accent'
+                            )}
+                          >
+                            <Camera className="h-4 w-4" />
+                          </button>
+                          {row.status === 'found' && (
+                            <span className="text-[10px] text-amber-600 leading-tight text-center">Wrong?</span>
+                          )}
+                        </div>
                       )}
                     </td>
 
@@ -839,7 +840,7 @@ export default function DesktopScannerPage() {
 
       {/* Camera modals */}
       {cameraRowId && (
-        <PortraitCameraModal onDetected={handleCameraBarcode} onClose={() => setCameraRowId(null)} />
+        <BarcodeCameraModal onDetected={handleCameraBarcode} onClose={() => setCameraRowId(null)} />
       )}
       {labelRowId && (
         <LabelCaptureModal onCapture={handleLabelCapture} onClose={() => setLabelRowId(null)} />

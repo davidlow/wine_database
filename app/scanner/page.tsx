@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle, XCircle, Sparkles } from 'lucide-react';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import LabelCapture from '@/components/LabelCapture';
@@ -24,7 +23,6 @@ type ScanState =
   | 'error';
 
 export default function ScannerPage() {
-  const router = useRouter();
   // Ref-based guard prevents the ZXing callback race: even with the debounce
   // in useBarcode, React state updates are async so scanState can lag by one
   // render. processingRef is synchronous and blocks immediately.
@@ -37,6 +35,7 @@ export default function ScannerPage() {
   const [savedWineId, setSavedWineId] = useState<string | null>(null);
   const [savedWineName, setSavedWineName] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(true);
+  const [manualBarcode, setManualBarcode] = useState('');
   const [capturedLabelImage, setCapturedLabelImage] = useState<string | null>(null);
   const [labelFoodPairings, setLabelFoodPairings] = useState<string[]>([]);
   const [labelCuisineTags, setLabelCuisineTags] = useState<string[]>([]);
@@ -69,6 +68,7 @@ export default function ScannerPage() {
     setSavedWineId(null);
     setSavedWineName(null);
     setShowScanner(true);
+    setManualBarcode('');
     setCapturedLabelImage(null);
     setLabelFoodPairings([]);
   };
@@ -214,7 +214,39 @@ export default function ScannerPage() {
 
       {/* Barcode scanner */}
       {showScanner && (
-        <BarcodeScanner onDetected={handleDetected} autoStart />
+        <>
+          <BarcodeScanner onDetected={handleDetected} autoStart />
+          {/* Manual entry fallback — if ZXing doesn't detect on this device */}
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={manualBarcode}
+                onChange={e => setManualBarcode(e.target.value.trim())}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && manualBarcode) handleDetected(manualBarcode);
+                }}
+                placeholder="Or type barcode manually…"
+                className="flex-1 px-3 py-2 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                disabled={!manualBarcode}
+                onClick={() => handleDetected(manualBarcode)}
+                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors"
+              >
+                Look Up
+              </button>
+            </div>
+            <button
+              onClick={() => { setShowScanner(false); setScanState('scanning-label'); }}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-md border text-sm text-muted-foreground hover:bg-accent transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Skip barcode — scan label with Gemini instead
+            </button>
+          </div>
+        </>
       )}
 
       {/* Label capture camera */}
@@ -277,6 +309,13 @@ export default function ScannerPage() {
             )}
             <button onClick={handleReset} className="py-2 rounded-md border text-sm hover:bg-accent transition-colors">
               Scan Another
+            </button>
+            <button
+              onClick={() => { setErrorMessage(null); setScanState('scanning-label'); }}
+              className="flex items-center justify-center gap-2 py-2 rounded-md border text-sm text-muted-foreground hover:bg-accent transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Wrong wine? Scan label with Gemini
             </button>
           </div>
         </div>
@@ -362,12 +401,12 @@ export default function ScannerPage() {
             >
               View Wine
             </Link>
-            <button
-              onClick={() => router.push(`/wines/${savedWineId}`)}
-              className="py-2 rounded-md border text-sm hover:bg-accent transition-colors"
+            <Link
+              href="/cellar"
+              className="text-center py-2 rounded-md border text-sm hover:bg-accent transition-colors"
             >
-              Add to Cellar
-            </button>
+              Go to Cellar
+            </Link>
             <button onClick={handleReset} className="py-2 rounded-md border text-sm hover:bg-accent transition-colors">
               Scan Another
             </button>

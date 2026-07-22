@@ -211,7 +211,7 @@ export async function scanLabel(imageBase64: string, barcode?: string): Promise<
   const body: GeminiRequest = {
     contents: [{
       parts: [
-        { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
+        { inline_data: { mime_type: 'image/webp', data: imageBase64 } },
         { text: promptText },
       ],
     }],
@@ -392,7 +392,7 @@ export async function scanLabelBatch(
   const parts: GeminiPart[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    parts.push({ inline_data: { mime_type: 'image/jpeg', data: item.imageBase64 } });
+    parts.push({ inline_data: { mime_type: 'image/webp', data: item.imageBase64 } });
     const barcodeNote = item.barcode ? `, barcode: ${item.barcode}` : '';
     parts.push({ text: `Wine ${i + 1} (id: "${item.id}"${barcodeNote})` });
   }
