@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, Loader2, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import LabelCapture, { type LabelCaptureResult } from '@/components/LabelCapture';
 import LocationPicker from '@/components/LocationPicker';
@@ -690,6 +690,17 @@ export default function RackScannerPage() {
                       className="w-full text-sm text-muted-foreground hover:text-foreground text-center py-1"
                     >
                       No barcode? Search by producer →
+                    </button>
+                    <button
+                      onClick={() => {
+                        barcodeRef.current = '';
+                        barcodeLookupRef.current = Promise.resolve(null);
+                        setStep('label-capture');
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 text-xs text-primary hover:underline py-0.5"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      No barcode? Scan label with Gemini
                     </button>
                   </div>
                 )}

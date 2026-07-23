@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle, Barcode, Camera, Check, CheckCircle,
-  ChevronDown, ChevronUp, Loader2, PackagePlus, RotateCcw, Trash2, X,
+  ChevronDown, ChevronUp, Loader2, PackagePlus, RotateCcw, Sparkles, Trash2, X,
 } from 'lucide-react';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import LabelCapture, { type LabelCaptureResult } from '@/components/LabelCapture';
@@ -96,15 +96,23 @@ export default function BulkScanPage() {
     }
   }, []);
 
+  const handleNoBarcode = () => {
+    const id = `_nb_${Math.random().toString(36).slice(2, 10)}`;
+    scannedRef.current.add(id);
+    setScanEntries(prev => [...prev, { barcode: id, state: 'not-found' }]);
+    setCapturingLabel(id);
+  };
+
   const handleLabelCapture = async (barcode: string, { gemini, backGemini }: LabelCaptureResult) => {
     setCapturingLabel(null);
     setScanEntries(prev => prev.map(e => e.barcode === barcode ? { ...e, state: 'label-scanning' } : e));
+    const isNoBarcode = barcode.startsWith('_nb_');
 
     try {
       const res = await fetch('/api/label-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: gemini, backImageBase64: backGemini ?? null, barcode }),
+        body: JSON.stringify({ imageBase64: gemini, backImageBase64: backGemini ?? null, barcode: isNoBarcode ? undefined : barcode }),
       });
       const result: WineLookupResult = await res.json();
 
@@ -248,7 +256,18 @@ export default function BulkScanPage() {
       {phase === 'scan' && (
         <div className="space-y-4">
           {/* Barcode scanner — hidden while label capture overlay is open */}
-          {!capturingLabel && <BarcodeScanner onDetected={handleDetected} autoStart />}
+          {!capturingLabel && (
+            <div className="space-y-2">
+              <BarcodeScanner onDetected={handleDetected} autoStart />
+              <button
+                onClick={handleNoBarcode}
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-primary hover:underline py-1"
+              >
+                <Sparkles className="h-3 w-3" />
+                No barcode? Scan label with Gemini
+              </button>
+            </div>
+          )}
 
           {/* Scanned items list */}
           <div className="rounded-lg border bg-card overflow-hidden">
@@ -383,7 +402,9 @@ export default function BulkScanPage() {
             </button>
             <div>
               <p className="text-sm font-medium">Scan Wine Label</p>
-              <p className="text-xs text-muted-foreground font-mono">{capturingLabel}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                {capturingLabel.startsWith('_nb_') ? 'No barcode — Gemini will identify' : capturingLabel}
+              </p>
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
