@@ -170,6 +170,15 @@ export default function ScannerPage() {
              scanState === 'confirming' ? 'Review the AI-extracted details before saving.' :
              'Scan a barcode to look up wine info automatically.'}
           </p>
+          {showScanner && (
+            <button
+              onClick={() => { setShowScanner(false); setScanState('scanning-label'); }}
+              className="mt-1.5 flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Sparkles className="h-3 w-3" />
+              No barcode? Skip to label scan
+            </button>
+          )}
         </div>
         {scanState === 'idle' && (
           <div className="flex gap-2 shrink-0">
@@ -238,13 +247,6 @@ export default function ScannerPage() {
                 Look Up
               </button>
             </div>
-            <button
-              onClick={() => { setShowScanner(false); setScanState('scanning-label'); }}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-md border text-sm text-muted-foreground hover:bg-accent transition-colors"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Skip barcode — scan label with Gemini instead
-            </button>
           </div>
         </>
       )}
@@ -253,7 +255,14 @@ export default function ScannerPage() {
       {scanState === 'scanning-label' && (
         <LabelCapture
           onCapture={handleLabelCapture}
-          onCancel={() => setScanState('not-found')}
+          onCancel={() => {
+            if (scannedCode) {
+              setScanState('not-found');
+            } else {
+              setScanState('idle');
+              setShowScanner(true);
+            }
+          }}
         />
       )}
 
