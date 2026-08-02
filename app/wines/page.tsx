@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useCallback, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, Loader2, MapPin, X, Rows3 } from 'lucide-react';
+import { Plus, Loader2, MapPin, X, Rows3, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useWineSearch } from '@/hooks/useWineSearch';
 import { useProfile } from '@/hooks/useProfile';
@@ -205,6 +205,14 @@ function WinesContent() {
               Bulk Add
             </button>
           )}
+          <Link
+            href="/admin/enrich"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors text-muted-foreground"
+            title="Enrich wines missing Gemini characteristics"
+          >
+            <Sparkles className="h-4 w-4" />
+            Enrich
+          </Link>
           <Link
             href="/wines/new"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
