@@ -1091,4 +1091,46 @@ export const supabaseAdapter: DbAdapter = {
     }
     return counts;
   },
+
+  async mergeWines(keepId: string, mergeIds: string[], mergedFields?: Partial<Omit<import('@/types').Wine, 'id' | 'created_at' | 'updated_at'>>): Promise<import('@/types').Wine> {
+    const admin = getSupabaseAdmin();
+
+    const keepWine = await supabaseAdapter.getWineById(keepId);
+    if (!keepWine) throw new Error(`Wine ${keepId} not found`);
+    const mergeWines = await Promise.all(mergeIds.map(id => supabaseAdapter.getWineById(id)));
+
+    let label_image = keepWine.label_image;
+    let back_image = keepWine.back_image;
+    for (const w of mergeWines.filter(Boolean)) {
+      if (!label_image && w!.label_image) label_image = w!.label_image;
+      if (!back_image && w!.back_image) back_image = w!.back_image;
+    }
+
+    for (const mergeId of mergeIds) {
+      await admin.from('cellar_inventory').update({ wine_id: keepId }).eq('wine_id', mergeId);
+      await admin.from('bottle_transactions').update({ wine_id: keepId }).eq('wine_id', mergeId);
+
+      const { data: pairings } = await admin.from('wine_food_pairings').select('*').eq('wine_id', mergeId);
+      for (const p of (pairings ?? [])) {
+        const { count } = await admin.from('wine_food_pairings').select('id', { count: 'exact', head: true }).eq('wine_id', keepId).eq('food', (p as { food: string }).food);
+        if (!count) await admin.from('wine_food_pairings').insert({ ...p, wine_id: keepId });
+      }
+      await admin.from('wine_food_pairings').delete().eq('wine_id', mergeId);
+
+      const { data: tags } = await admin.from('wine_cuisine_tags').select('*').eq('wine_id', mergeId);
+      for (const t of (tags ?? [])) {
+        await admin.from('wine_cuisine_tags').upsert({ ...t, wine_id: keepId }, { onConflict: 'wine_id,tag' });
+      }
+      await admin.from('wine_cuisine_tags').delete().eq('wine_id', mergeId);
+
+      await admin.from('discovery_session_wines').update({ wine_id: keepId }).eq('wine_id', mergeId);
+      await supabaseAdapter.deleteWine(mergeId);
+    }
+
+    return supabaseAdapter.updateWine(keepId, {
+      label_image: label_image ?? keepWine.label_image,
+      back_image: back_image ?? keepWine.back_image,
+      ...mergedFields,
+    });
+  },
 };

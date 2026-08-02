@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { scanLabel, enrichWineByText } from '@/lib/wine-lookup/label-scan';
+import { nameSimilarity } from '@/lib/wine-duplicates';
 import type { WineLookupResult } from '@/lib/wine-lookup/types';
-
-function nameSimilarity(a: string, b: string): number {
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-  const na = normalize(a);
-  const nb = normalize(b);
-  if (na === nb) return 1;
-  const tokensA = new Set(na.split(/\s+/).filter(t => t.length > 2));
-  const tokensB = new Set(nb.split(/\s+/).filter(t => t.length > 2));
-  if (tokensA.size === 0 || tokensB.size === 0) return 0;
-  let shared = 0;
-  tokensA.forEach(t => { if (tokensB.has(t)) shared++; });
-  return shared / Math.max(tokensA.size, tokensB.size);
-}
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string; wineId: string }> }) {
   try {

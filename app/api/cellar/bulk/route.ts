@@ -35,6 +35,9 @@ interface BulkAddItem {
   food_pairings?: string[];
   cuisine_tags?: string[];
   label_image?: string;
+  back_image?: string;
+  // When true, update label_image/back_image on the existing wine if they're currently null
+  update_images?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -64,12 +67,36 @@ export async function POST(request: NextRequest) {
       try {
         let wineId = item.wine_id;
 
+        // When an existing wine ID is supplied (e.g. search-found), update its images if missing
+        if (wineId && item.update_images && (item.label_image || item.back_image)) {
+          const existing = await db.getWineById(wineId);
+          if (existing) {
+            const patch: Record<string, string> = {};
+            if (!existing.label_image && item.label_image) patch.label_image = item.label_image;
+            if (!existing.back_image && item.back_image) patch.back_image = item.back_image;
+            if (Object.keys(patch).length > 0) {
+              await db.updateWine(wineId, patch).catch(() => {});
+            }
+          }
+        }
+
         // Reuse existing wine by barcode only when the item came from a barcode lookup.
         // Gemini/manual identifications may assign a different wine to the same barcode —
         // those should create a new record rather than silently add to the wrong wine.
         if (!wineId && item.barcode && item.source === 'barcode') {
           const existing = await db.getWineByBarcode(item.barcode);
-          wineId = existing?.id;
+          if (existing) {
+            wineId = existing.id;
+            // Update images on the existing wine if it doesn't have them yet
+            if (item.update_images) {
+              const patch: Record<string, string> = {};
+              if (!existing.label_image && item.label_image) patch.label_image = item.label_image;
+              if (!existing.back_image && item.back_image) patch.back_image = item.back_image;
+              if (Object.keys(patch).length > 0) {
+                await db.updateWine(wineId, patch).catch(() => {});
+              }
+            }
+          }
         }
 
         if (!wineId) {
@@ -85,6 +112,7 @@ export async function POST(request: NextRequest) {
             description: item.description,
             barcode: item.barcode,
             label_image: item.label_image,
+            back_image: item.back_image,
             acidity: item.acidity,
             tannin: item.tannin,
             alcohol: item.alcohol,

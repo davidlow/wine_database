@@ -28,6 +28,7 @@ interface ScanEntry {
   wine: Partial<Wine>;
   quantity: number;
   labelThumbnail?: string;
+  backThumbnail?: string;
   source: EntrySource;
   // Pairing data lives outside Wine (separate tables) — carried from Gemini batch result
   food_pairings?: string[];
@@ -85,6 +86,7 @@ export default function RackScannerPage() {
   // Per-bottle pending state (qty step only — barcode-found / search / manual)
   const [pendingWine, setPendingWine] = useState<Partial<Wine>>({});
   const [pendingLabel, setPendingLabel] = useState<string | undefined>(undefined);
+  const [pendingBackLabel, setPendingBackLabel] = useState<string | undefined>(undefined);
   const [pendingSource, setPendingSource] = useState<EntrySource>('barcode');
   const [pendingQty, setPendingQty] = useState(1);
 
@@ -137,6 +139,7 @@ export default function RackScannerPage() {
     barcodeLookupRef.current = Promise.resolve(null);
     setPendingWine({});
     setPendingLabel(undefined);
+    setPendingBackLabel(undefined);
     setPendingSource('barcode');
     setPendingQty(1);
     setManualName('');
@@ -243,7 +246,7 @@ export default function RackScannerPage() {
 
   // ── Label capture ──────────────────────────────────────────────────────────
 
-  const handleLabelCapture = useCallback(async ({ gemini, backGemini, thumbnail }: LabelCaptureResult) => {
+  const handleLabelCapture = useCallback(async ({ gemini, backGemini, thumbnail, backThumbnail }: LabelCaptureResult) => {
     const useGemini = forceGeminiRef.current;
     forceGeminiRef.current = false;
     const barcodeWine = useGemini ? null : await barcodeLookupRef.current;
@@ -251,6 +254,7 @@ export default function RackScannerPage() {
       // Barcode found — show qty step (user confirms and sets quantity)
       setPendingWine(barcodeWine);
       setPendingLabel(thumbnail);
+      setPendingBackLabel(backThumbnail);
       setPendingSource('barcode');
       setPendingQty(1);
       setStep('qty');
@@ -260,7 +264,7 @@ export default function RackScannerPage() {
       const barcode = barcodeRef.current || undefined;
       if (barcode) scannedBarcodes.current.set(barcode, id);
       geminiPendingData.current.set(id, { imageBase64: gemini, backImageBase64: backGemini, barcode });
-      setEntries(prev => [...prev, { id, wine: {}, quantity: 1, labelThumbnail: thumbnail, source: 'pending' }]);
+      setEntries(prev => [...prev, { id, wine: {}, quantity: 1, labelThumbnail: thumbnail, backThumbnail, source: 'pending' }]);
       geminiQueue.current.push(id);
       resetBottle();
       setStep('barcode-scan');
@@ -344,6 +348,7 @@ export default function RackScannerPage() {
       wine: finalWine,
       quantity: pendingQty,
       labelThumbnail: pendingLabel,
+      backThumbnail: pendingBackLabel,
       source: pendingSource,
     }]);
 
@@ -404,6 +409,8 @@ export default function RackScannerPage() {
           location: location.trim(),
           items: valid.map(it => ({
             barcode: it.wine.barcode,
+            // For search-found wines pass the existing ID so no duplicate is created
+            wine_id: it.source === 'search' ? it.wine.id : undefined,
             name: it.name.trim(),
             producer: it.producer.trim() || undefined,
             vintage_year: it.vintage_year,
@@ -414,6 +421,8 @@ export default function RackScannerPage() {
             quantity: Math.max(1, it.quantity),
             purchase_price: it.purchase_price,
             label_image: it.labelThumbnail,
+            back_image: it.backThumbnail,
+            update_images: true,
             source: it.source,
             // Gemini structural characteristics
             acidity: it.wine.acidity,

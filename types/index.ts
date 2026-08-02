@@ -38,8 +38,9 @@ export interface Wine {
   drink_by_year?: number;
   barcode?: string;
   image_url?: string;
-  // Label photo: base64 WebP (no data: prefix) — omitted from list queries for performance
-  label_image?: string;
+  // Label photos: base64 WebP (no data: prefix)
+  label_image?: string;  // front label thumbnail, 150×225
+  back_image?: string;   // back label thumbnail, 150×225
   // Structural element scores 0–5 (0 = low, 5 = high)
   acidity?: number;
   tannin?: number;
@@ -291,6 +292,7 @@ export interface BulkScanItem {
   food_pairings?: string[];
   cuisine_tags?: string[];
   label_image?: string;
+  back_image?: string;
 }
 
 export interface FreezerItem {
@@ -577,4 +579,7 @@ export interface DbAdapter {
 
   // Cellar counts for a set of wine IDs (used by similarity search)
   getCellarCounts(profileId: string, wineIds: string[]): Promise<Map<string, number>>;
+
+  // Admin: merge duplicate wine records into a single canonical record
+  mergeWines(keepId: string, mergeIds: string[], mergedFields?: Partial<Omit<Wine, 'id' | 'created_at' | 'updated_at'>>): Promise<Wine>;
 }

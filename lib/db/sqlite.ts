@@ -65,6 +65,7 @@ function runMigrations(conn: Database.Database): void {
   try { conn.exec('ALTER TABLE wines ADD COLUMN oak_influence REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN fruit_intensity REAL'); } catch {}
   try { conn.exec('ALTER TABLE wines ADD COLUMN pairing_rationale TEXT'); } catch {}
+  try { conn.exec('ALTER TABLE wines ADD COLUMN back_image TEXT'); } catch {}
   // Discovery sessions tables are created via schema.sql IF NOT EXISTS — no ALTER needed
 }
 
@@ -110,7 +111,7 @@ function nullify(obj: Record<string, unknown>, keys: readonly string[]): Record<
   return Object.fromEntries(keys.map(k => [k, obj[k] ?? null]));
 }
 
-const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'label_image', 'acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'minerality', 'oak_influence', 'fruit_intensity', 'fruit_profile', 'pairing_weight', 'pairing_rationale', 'created_at', 'updated_at'] as const;
+const WINE_COLS = ['id', 'name', 'producer', 'variety', 'wine_type', 'region', 'appellation', 'country', 'vintage_year', 'description', 'average_price', 'alcohol_content', 'drink_from_year', 'drink_by_year', 'barcode', 'image_url', 'label_image', 'back_image', 'acidity', 'tannin', 'alcohol', 'sweetness', 'body', 'minerality', 'oak_influence', 'fruit_intensity', 'fruit_profile', 'pairing_weight', 'pairing_rationale', 'created_at', 'updated_at'] as const;
 const PROFILE_COLS = ['id', 'user_id', 'name', 'description', 'group_name', 'created_at', 'updated_at'] as const;
 const INVENTORY_COLS = ['id', 'wine_id', 'profile_id', 'location', 'quantity', 'purchase_price', 'purchase_date', 'notes', 'created_at', 'updated_at'] as const;
 const LOCATION_COLS = ['id', 'profile_id', 'name', 'group_name', 'max_capacity', 'notes', 'location_type', 'position_x', 'position_y', 'hierarchy_group_id', 'created_at', 'updated_at'] as const;
@@ -255,12 +256,12 @@ export const sqliteAdapter: DbAdapter = {
     d.prepare(`
       INSERT INTO wines (id, name, producer, variety, wine_type, region, appellation, country,
         vintage_year, description, average_price, alcohol_content, drink_from_year, drink_by_year,
-        barcode, image_url, label_image, acidity, tannin, alcohol, sweetness, body,
+        barcode, image_url, label_image, back_image, acidity, tannin, alcohol, sweetness, body,
         minerality, oak_influence, fruit_intensity, fruit_profile, pairing_weight, pairing_rationale,
         created_at, updated_at)
       VALUES (@id, @name, @producer, @variety, @wine_type, @region, @appellation, @country,
         @vintage_year, @description, @average_price, @alcohol_content, @drink_from_year, @drink_by_year,
-        @barcode, @image_url, @label_image, @acidity, @tannin, @alcohol, @sweetness, @body,
+        @barcode, @image_url, @label_image, @back_image, @acidity, @tannin, @alcohol, @sweetness, @body,
         @minerality, @oak_influence, @fruit_intensity, @fruit_profile, @pairing_weight, @pairing_rationale,
         @created_at, @updated_at)
     `).run(nullify(wine as unknown as Record<string, unknown>, WINE_COLS));
@@ -277,7 +278,7 @@ export const sqliteAdapter: DbAdapter = {
         region=@region, appellation=@appellation, country=@country, vintage_year=@vintage_year,
         description=@description, average_price=@average_price, alcohol_content=@alcohol_content,
         drink_from_year=@drink_from_year, drink_by_year=@drink_by_year,
-        barcode=@barcode, image_url=@image_url, label_image=@label_image,
+        barcode=@barcode, image_url=@image_url, label_image=@label_image, back_image=@back_image,
         acidity=@acidity, tannin=@tannin, alcohol=@alcohol, sweetness=@sweetness,
         body=@body, minerality=@minerality, oak_influence=@oak_influence,
         fruit_intensity=@fruit_intensity, fruit_profile=@fruit_profile,
@@ -1279,5 +1280,61 @@ export const sqliteAdapter: DbAdapter = {
       GROUP BY wine_id
     `).all(profileId, ...wineIds) as { wine_id: string; total: number }[];
     return new Map(rows.map(r => [r.wine_id, r.total]));
+  },
+
+  async mergeWines(keepId: string, mergeIds: string[], mergedFields?: Partial<Omit<import('@/types').Wine, 'id' | 'created_at' | 'updated_at'>>): Promise<import('@/types').Wine> {
+    const d = getDb();
+
+    const keepWine = await sqliteAdapter.getWineById(keepId);
+    if (!keepWine) throw new Error(`Wine ${keepId} not found`);
+    const mergeWines = await Promise.all(mergeIds.map(id => sqliteAdapter.getWineById(id)));
+
+    // Merge images: use the first available front/back image across all records
+    let label_image = keepWine.label_image;
+    let back_image = keepWine.back_image;
+    for (const w of mergeWines.filter(Boolean)) {
+      if (!label_image && w!.label_image) label_image = w!.label_image;
+      if (!back_image && w!.back_image) back_image = w!.back_image;
+    }
+
+    for (const mergeId of mergeIds) {
+      // Move cellar inventory entries
+      d.prepare('UPDATE cellar_inventory SET wine_id = ? WHERE wine_id = ?').run(keepId, mergeId);
+
+      // Move bottle transactions (wine_id is SET NULL on delete — must reassign first)
+      d.prepare('UPDATE bottle_transactions SET wine_id = ? WHERE wine_id = ?').run(keepId, mergeId);
+
+      // Move food pairings (skip duplicates)
+      type PairingRow = { id: string; food: string; source: string; created_at: string };
+      const pairings = d.prepare('SELECT * FROM wine_food_pairings WHERE wine_id = ?').all(mergeId) as PairingRow[];
+      for (const p of pairings) {
+        const exists = d.prepare('SELECT id FROM wine_food_pairings WHERE wine_id = ? AND food = ?').get(keepId, p.food);
+        if (!exists) {
+          d.prepare('INSERT INTO wine_food_pairings (id, wine_id, food, source, created_at) VALUES (?, ?, ?, ?, ?)').run(generateId(), keepId, p.food, p.source, p.created_at);
+        }
+      }
+      d.prepare('DELETE FROM wine_food_pairings WHERE wine_id = ?').run(mergeId);
+
+      // Move cuisine tags (INSERT OR IGNORE handles uniqueness)
+      type TagRow = { id: string; tag: string; source: string; created_at: string };
+      const tags = d.prepare('SELECT * FROM wine_cuisine_tags WHERE wine_id = ?').all(mergeId) as TagRow[];
+      for (const t of tags) {
+        d.prepare('INSERT OR IGNORE INTO wine_cuisine_tags (id, wine_id, tag, source, created_at) VALUES (?, ?, ?, ?, ?)').run(generateId(), keepId, t.tag, t.source, t.created_at);
+      }
+      d.prepare('DELETE FROM wine_cuisine_tags WHERE wine_id = ?').run(mergeId);
+
+      // Re-point discovery session wines
+      d.prepare('UPDATE discovery_session_wines SET wine_id = ? WHERE wine_id = ?').run(keepId, mergeId);
+
+      // Delete the merged wine record (cascades will handle any remaining FK refs)
+      await sqliteAdapter.deleteWine(mergeId);
+    }
+
+    // Update the kept wine with merged images and any caller-supplied field overrides
+    return sqliteAdapter.updateWine(keepId, {
+      label_image: label_image ?? keepWine.label_image,
+      back_image: back_image ?? keepWine.back_image,
+      ...mergedFields,
+    });
   },
 };

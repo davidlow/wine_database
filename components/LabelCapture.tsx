@@ -15,9 +15,10 @@ async function resizeToWebP(source: HTMLCanvasElement, maxW: number, maxH: numbe
 }
 
 export interface LabelCaptureResult {
-  gemini: string;       // front label, 400×600 @ 0.7 — sent to the label-scan API
-  backGemini?: string;  // back label, 400×600 @ 0.7 — sent alongside front for better ID
-  thumbnail: string;    // front label, 150×225 @ 0.35 — stored in the database
+  gemini: string;          // front label, 400×600 @ 0.7 — sent to the label-scan API
+  backGemini?: string;     // back label, 400×600 @ 0.7 — sent alongside front for better ID
+  thumbnail: string;       // front label, 150×225 @ 0.35 — stored in the database
+  backThumbnail?: string;  // back label, 150×225 @ 0.35 — stored in the database
 }
 
 interface Props {
@@ -122,7 +123,7 @@ export default function LabelCapture({ onCapture, onCancel }: Props) {
     try {
       const data = await captureFrame();
       if (!data) return;
-      onCapture({ gemini: frontData.gemini, backGemini: data.gemini, thumbnail: frontData.thumbnail });
+      onCapture({ gemini: frontData.gemini, backGemini: data.gemini, thumbnail: frontData.thumbnail, backThumbnail: data.thumbnail });
     } finally {
       setProcessing(false);
     }

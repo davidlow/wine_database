@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useCallback, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, Loader2, MapPin, X, Rows3, Sparkles } from 'lucide-react';
+import { Plus, Loader2, MapPin, X, Rows3, Sparkles, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { useWineSearch } from '@/hooks/useWineSearch';
 import { useProfile } from '@/hooks/useProfile';
@@ -212,6 +212,14 @@ function WinesContent() {
           >
             <Sparkles className="h-4 w-4" />
             Enrich
+          </Link>
+          <Link
+            href="/admin/duplicates"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors text-muted-foreground"
+            title="Find and merge duplicate wine records"
+          >
+            <GitMerge className="h-4 w-4" />
+            Duplicates
           </Link>
           <Link
             href="/wines/new"

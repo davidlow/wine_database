@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS wines (
   barcode TEXT UNIQUE,
   image_url TEXT,
   label_image TEXT,
+  back_image TEXT,
   acidity REAL,
   tannin REAL,
   alcohol REAL,

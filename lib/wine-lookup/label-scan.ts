@@ -472,3 +472,123 @@ export async function scanLabelBatch(
     source: 'label-scan' as const,
   }));
 }
+
+// ── Duplicate verification ────────────────────────────────────────────────────
+
+export interface VerifyDuplicatesResult {
+  same: boolean;
+  confidence: number;
+  reasoning: string;
+}
+
+type WineSummary = {
+  name: string;
+  producer?: string;
+  vintage_year?: number;
+  variety?: string;
+  wine_type?: string;
+  region?: string;
+  country?: string;
+};
+
+export async function verifyDuplicates(wines: WineSummary[]): Promise<VerifyDuplicatesResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
+
+  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const descriptions = wines.map((w, i) =>
+    `Wine ${i + 1}: "${w.name}"${w.producer ? ` by ${w.producer}` : ''}${w.vintage_year ? ` (${w.vintage_year})` : ''}${w.variety ? `, ${w.variety}` : ''}${w.region ? `, ${w.region}` : ''}${w.country ? `, ${w.country}` : ''}`
+  ).join('\n');
+
+  const prompt = `You are a wine expert. Determine whether the following wine records all refer to the same wine.
+
+${descriptions}
+
+Return ONLY a JSON object — no markdown, no code fences:
+{
+  "same": true or false,
+  "confidence": 0.0–1.0,
+  "reasoning": "one or two sentences explaining your conclusion"
+}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+  const json = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message: string } };
+  if (!res.ok || json.error) throw new Error(json.error?.message ?? `Gemini API error ${res.status}`);
+
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  try {
+    const parsed = extractJson(text) as unknown as VerifyDuplicatesResult;
+    return {
+      same: !!parsed.same,
+      confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5,
+      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+    };
+  } catch {
+    return { same: false, confidence: 0, reasoning: 'Could not parse Gemini response' };
+  }
+}
+
+// ── Merge suggestions ─────────────────────────────────────────────────────────
+
+export async function mergeWineSuggestion(wines: WineSummary[]): Promise<Partial<WineSummary & { description?: string; acidity?: number; tannin?: number; alcohol?: number; sweetness?: number; body?: number; appellation?: string; average_price?: number; drink_from_year?: number; drink_by_year?: number }>> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is not set');
+
+  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const descriptions = wines.map((w, i) =>
+    `Record ${i + 1}: ${JSON.stringify(w)}`
+  ).join('\n');
+
+  const prompt = `You are a wine expert. These records likely refer to the same wine. Suggest the best merged values.
+
+${descriptions}
+
+Return ONLY a JSON object with the best single value for each field — no markdown, no code fences:
+{
+  "name": "best wine name",
+  "producer": "best producer name",
+  "vintage_year": 2019,
+  "variety": "best grape variety",
+  "wine_type": "one of: red, white, rosé, sparkling, dessert, fortified, other",
+  "region": "best region",
+  "appellation": "best appellation if known",
+  "country": "best country",
+  "description": "one short sentence about the wine style",
+  "average_price": 24.99,
+  "drink_from_year": 2023,
+  "drink_by_year": 2030,
+  "acidity": 3,
+  "tannin": 4,
+  "alcohol": 3,
+  "sweetness": 1,
+  "body": 4
+}
+Omit any field you are genuinely uncertain about. Structural scores 0–5.`;
+
+  const useGrounding = process.env.GEMINI_GROUNDING !== 'false';
+  const body: Record<string, unknown> = { contents: [{ parts: [{ text: prompt }] }] };
+  if (useGrounding) body.tools = [{ google_search: {} }];
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message: string } };
+  if (!res.ok || json.error) throw new Error(json.error?.message ?? `Gemini API error ${res.status}`);
+
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  try {
+    return extractJson(text) as ReturnType<typeof mergeWineSuggestion> extends Promise<infer T> ? T : never;
+  } catch {
+    return {};
+  }
+}

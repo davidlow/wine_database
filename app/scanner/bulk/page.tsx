@@ -103,7 +103,7 @@ export default function BulkScanPage() {
     setCapturingLabel(id);
   };
 
-  const handleLabelCapture = async (barcode: string, { gemini, backGemini }: LabelCaptureResult) => {
+  const handleLabelCapture = async (barcode: string, { gemini, backGemini, thumbnail, backThumbnail }: LabelCaptureResult) => {
     setCapturingLabel(null);
     setScanEntries(prev => prev.map(e => e.barcode === barcode ? { ...e, state: 'label-scanning' } : e));
     const isNoBarcode = barcode.startsWith('_nb_');
@@ -132,6 +132,9 @@ export default function BulkScanPage() {
             description: result.description,
             average_price: result.average_price,
             source: 'label-scan',
+            // Label thumbnails to persist in DB
+            label_image: thumbnail,
+            back_image: backThumbnail,
             // Gemini structural characteristics
             acidity: result.acidity,
             tannin: result.tannin,
@@ -194,6 +197,8 @@ export default function BulkScanPage() {
         pairing_rationale: d.pairing_rationale,
         food_pairings: d.food_pairings,
         cuisine_tags: d.cuisine_tags,
+        label_image: d.label_image,
+        back_image: d.back_image,
       };
     });
     setItems(reviewItems);
@@ -253,6 +258,9 @@ export default function BulkScanPage() {
             pairing_rationale: item.pairing_rationale,
             food_pairings: item.food_pairings,
             cuisine_tags: item.cuisine_tags,
+            label_image: item.label_image,
+            back_image: item.back_image,
+            update_images: true,
           })),
         }),
       });
