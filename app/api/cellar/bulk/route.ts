@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
 import { checkProfileAccess } from '@/lib/permissions';
-import type { WineType } from '@/types';
+import type { WineType, CuisineTag, PairingWeight } from '@/types';
 
 interface BulkAddItem {
   barcode?: string;
@@ -18,6 +18,23 @@ interface BulkAddItem {
   description?: string;
   quantity: number;
   purchase_price?: number;
+  // Source affects barcode-dedup logic: 'barcode' reuses existing, others create new
+  source?: string;
+  // Gemini structural characteristics
+  acidity?: number;
+  tannin?: number;
+  alcohol?: number;
+  sweetness?: number;
+  body?: number;
+  minerality?: number;
+  oak_influence?: number;
+  fruit_intensity?: number;
+  fruit_profile?: string;
+  pairing_weight?: PairingWeight;
+  pairing_rationale?: string;
+  food_pairings?: string[];
+  cuisine_tags?: string[];
+  label_image?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -47,15 +64,16 @@ export async function POST(request: NextRequest) {
       try {
         let wineId = item.wine_id;
 
-        // If already in DB (from batch lookup), skip wine creation
-        if (!wineId && item.barcode) {
+        // Reuse existing wine by barcode only when the item came from a barcode lookup.
+        // Gemini/manual identifications may assign a different wine to the same barcode —
+        // those should create a new record rather than silently add to the wrong wine.
+        if (!wineId && item.barcode && item.source === 'barcode') {
           const existing = await db.getWineByBarcode(item.barcode);
           wineId = existing?.id;
         }
 
         if (!wineId) {
-          // Create the wine record, barcode links future scans directly to it
-          const wine = await db.createWine({
+          const wineData = {
             name: item.name.trim(),
             producer: item.producer,
             vintage_year: item.vintage_year,
@@ -66,8 +84,43 @@ export async function POST(request: NextRequest) {
             country: item.country,
             description: item.description,
             barcode: item.barcode,
-          });
+            label_image: item.label_image,
+            acidity: item.acidity,
+            tannin: item.tannin,
+            alcohol: item.alcohol,
+            sweetness: item.sweetness,
+            body: item.body,
+            minerality: item.minerality,
+            oak_influence: item.oak_influence,
+            fruit_intensity: item.fruit_intensity,
+            fruit_profile: item.fruit_profile,
+            pairing_weight: item.pairing_weight,
+            pairing_rationale: item.pairing_rationale,
+          };
+          let wine;
+          try {
+            wine = await db.createWine(wineData);
+          } catch (err) {
+            // Barcode UNIQUE conflict — another wine has this barcode; save without it
+            if (String(err).includes('UNIQUE constraint failed: wines.barcode')) {
+              wine = await db.createWine({ ...wineData, barcode: undefined });
+            } else {
+              throw err;
+            }
+          }
           wineId = wine.id;
+
+          // Save food pairings and cuisine tags (fire-and-forget; don't block on failures)
+          if (item.food_pairings?.length) {
+            Promise.all(
+              item.food_pairings.map(f => db.addFoodPairing(wineId!, f, 'gemini'))
+            ).catch(() => {});
+          }
+          if (item.cuisine_tags?.length) {
+            Promise.all(
+              item.cuisine_tags.map(t => db.addCuisineTag(wineId!, t as CuisineTag, 'gemini'))
+            ).catch(() => {});
+          }
         }
 
         await db.addBottle({

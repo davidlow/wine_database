@@ -276,6 +276,21 @@ export interface BulkScanItem {
   source?: 'database' | 'openfoodfacts' | 'gemini-batch' | 'label-scan' | 'manual';
   found?: boolean;
   confidence?: number;
+  // Gemini structural characteristics — populated by label scan
+  acidity?: number;
+  tannin?: number;
+  alcohol?: number;
+  sweetness?: number;
+  body?: number;
+  minerality?: number;
+  oak_influence?: number;
+  fruit_intensity?: number;
+  fruit_profile?: string;
+  pairing_weight?: PairingWeight;
+  pairing_rationale?: string;
+  food_pairings?: string[];
+  cuisine_tags?: string[];
+  label_image?: string;
 }
 
 export interface FreezerItem {

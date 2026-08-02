@@ -132,6 +132,20 @@ export default function BulkScanPage() {
             description: result.description,
             average_price: result.average_price,
             source: 'label-scan',
+            // Gemini structural characteristics
+            acidity: result.acidity,
+            tannin: result.tannin,
+            alcohol: result.alcohol,
+            sweetness: result.sweetness,
+            body: result.body,
+            minerality: result.minerality,
+            oak_influence: result.oak_influence,
+            fruit_intensity: result.fruit_intensity,
+            fruit_profile: result.fruit_profile,
+            pairing_weight: result.pairing_weight,
+            pairing_rationale: result.pairing_rationale,
+            food_pairings: result.food_pairings,
+            cuisine_tags: result.cuisine_tags,
           },
         }));
       } else {
@@ -166,6 +180,20 @@ export default function BulkScanPage() {
         average_price: d.average_price,
         purchase_price: d.average_price,
         source: d.source ?? 'manual',
+        // Gemini structural characteristics
+        acidity: d.acidity,
+        tannin: d.tannin,
+        alcohol: d.alcohol,
+        sweetness: d.sweetness,
+        body: d.body,
+        minerality: d.minerality,
+        oak_influence: d.oak_influence,
+        fruit_intensity: d.fruit_intensity,
+        fruit_profile: d.fruit_profile,
+        pairing_weight: d.pairing_weight,
+        pairing_rationale: d.pairing_rationale,
+        food_pairings: d.food_pairings,
+        cuisine_tags: d.cuisine_tags,
       };
     });
     setItems(reviewItems);
@@ -196,7 +224,8 @@ export default function BulkScanPage() {
           profile_id: activeProfile.id,
           location,
           items: validItems.map(item => ({
-            barcode: item.barcode,
+            // Strip internal no-barcode placeholder IDs — they should not be persisted
+            barcode: item.barcode?.startsWith('_nb_') ? undefined : item.barcode,
             wine_id: item.wine_id,
             name: item.name!.trim(),
             producer: item.producer,
@@ -209,6 +238,21 @@ export default function BulkScanPage() {
             description: item.description,
             quantity: Math.max(1, item.quantity),
             purchase_price: item.purchase_price,
+            source: item.source,
+            // Gemini structural characteristics
+            acidity: item.acidity,
+            tannin: item.tannin,
+            alcohol: item.alcohol,
+            sweetness: item.sweetness,
+            body: item.body,
+            minerality: item.minerality,
+            oak_influence: item.oak_influence,
+            fruit_intensity: item.fruit_intensity,
+            fruit_profile: item.fruit_profile,
+            pairing_weight: item.pairing_weight,
+            pairing_rationale: item.pairing_rationale,
+            food_pairings: item.food_pairings,
+            cuisine_tags: item.cuisine_tags,
           })),
         }),
       });

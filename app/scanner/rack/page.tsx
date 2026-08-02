@@ -29,6 +29,9 @@ interface ScanEntry {
   quantity: number;
   labelThumbnail?: string;
   source: EntrySource;
+  // Pairing data lives outside Wine (separate tables) — carried from Gemini batch result
+  food_pairings?: string[];
+  cuisine_tags?: string[];
 }
 
 interface ReviewEntry extends ScanEntry {
@@ -40,6 +43,7 @@ interface ReviewEntry extends ScanEntry {
   region: string;
   country: string;
   purchase_price: number | undefined;
+  // food_pairings and cuisine_tags inherited from ScanEntry
 }
 
 const SOURCE_COLORS: Record<EntrySource, string> = {
@@ -116,6 +120,8 @@ export default function RackScannerPage() {
   const scannedBarcodes = useRef<Map<string, string>>(new Map()); // barcode → entry id
   const barcodeRef = useRef('');
   const barcodeLookupRef = useRef<Promise<Partial<Wine> | null>>(Promise.resolve(null));
+  // When true, handleLabelCapture skips the barcode-found branch and forces Gemini
+  const forceGeminiRef = useRef(false);
 
   // Gemini batch refs
   const geminiQueue = useRef<string[]>([]); // entry IDs awaiting batch
@@ -174,15 +180,22 @@ export default function RackScannerPage() {
           body: JSON.stringify({ items }),
         });
         const data = await res.json();
-        const results: Array<{ id: string; found: boolean; name?: string } & Partial<Wine>> =
+        const results: Array<{ id: string; found: boolean; name?: string; food_pairings?: string[]; cuisine_tags?: string[] } & Partial<Wine>> =
           Array.isArray(data.results) ? data.results : [];
 
         setEntries(prev => prev.map(entry => {
           const r = results.find(x => x.id === entry.id);
           if (!r) return entry;
+          const pendingData = geminiPendingData.current.get(entry.id);
           geminiPendingData.current.delete(entry.id);
           if (r.found && r.name) {
-            return { ...entry, wine: r as Partial<Wine>, source: 'gemini' as const };
+            // Carry the original scanned barcode — the batch prompt response has no barcode field
+            const wine: Partial<Wine> = { ...(r as Partial<Wine>), barcode: r.barcode ?? pendingData?.barcode };
+            return {
+              ...entry, wine, source: 'gemini' as const,
+              food_pairings: r.food_pairings,
+              cuisine_tags: r.cuisine_tags as string[] | undefined,
+            };
           }
           return { ...entry, source: 'manual' as const };
         }));
@@ -231,7 +244,9 @@ export default function RackScannerPage() {
   // ── Label capture ──────────────────────────────────────────────────────────
 
   const handleLabelCapture = useCallback(async ({ gemini, backGemini, thumbnail }: LabelCaptureResult) => {
-    const barcodeWine = await barcodeLookupRef.current;
+    const useGemini = forceGeminiRef.current;
+    forceGeminiRef.current = false;
+    const barcodeWine = useGemini ? null : await barcodeLookupRef.current;
     if (barcodeWine) {
       // Barcode found — show qty step (user confirms and sets quantity)
       setPendingWine(barcodeWine);
@@ -240,7 +255,7 @@ export default function RackScannerPage() {
       setPendingQty(1);
       setStep('qty');
     } else {
-      // Not found — add as 'pending', skip qty step, go straight back to scanner
+      // Not found or user chose Gemini override — queue for batch label analysis
       const id = Math.random().toString(36).slice(2, 10);
       const barcode = barcodeRef.current || undefined;
       if (barcode) scannedBarcodes.current.set(barcode, id);
@@ -399,6 +414,21 @@ export default function RackScannerPage() {
             quantity: Math.max(1, it.quantity),
             purchase_price: it.purchase_price,
             label_image: it.labelThumbnail,
+            source: it.source,
+            // Gemini structural characteristics
+            acidity: it.wine.acidity,
+            tannin: it.wine.tannin,
+            alcohol: it.wine.alcohol,
+            sweetness: it.wine.sweetness,
+            body: it.wine.body,
+            minerality: it.wine.minerality,
+            oak_influence: it.wine.oak_influence,
+            fruit_intensity: it.wine.fruit_intensity,
+            fruit_profile: it.wine.fruit_profile,
+            pairing_weight: it.wine.pairing_weight,
+            pairing_rationale: it.wine.pairing_rationale,
+            food_pairings: it.food_pairings,
+            cuisine_tags: it.cuisine_tags,
           })),
         }),
       });
@@ -913,6 +943,17 @@ export default function RackScannerPage() {
                         <button onClick={() => setPendingQty(q => Math.min(99, q + 1))} className="px-4 py-2.5 text-lg hover:bg-muted">+</button>
                       </div>
                     </div>
+
+                    {/* When barcode found, offer Gemini as alternative identification */}
+                    {pendingSource === 'barcode' && (
+                      <button
+                        onClick={() => { forceGeminiRef.current = true; setStep('label-capture'); }}
+                        className="w-full flex items-center justify-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 hover:underline py-0.5"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Wrong wine? Scan label with Gemini
+                      </button>
+                    )}
 
                     <div className="flex gap-3">
                       <button
