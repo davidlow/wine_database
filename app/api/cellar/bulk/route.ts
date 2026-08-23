@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
 import { checkProfileAccess } from '@/lib/permissions';
+import { errorMessage, isUniqueConstraintError } from '@/lib/utils';
 import type { WineType, CuisineTag, PairingWeight } from '@/types';
 
 interface BulkAddItem {
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
             wine = await db.createWine(wineData);
           } catch (err) {
             // Barcode UNIQUE conflict — another wine has this barcode; save without it
-            if (String(err).includes('UNIQUE constraint failed: wines.barcode')) {
+            if (isUniqueConstraintError(err, 'wines', 'barcode')) {
               wine = await db.createWine({ ...wineData, barcode: undefined });
             } else {
               throw err;
@@ -161,7 +162,7 @@ export async function POST(request: NextRequest) {
 
         added++;
       } catch (err) {
-        errors.push(`"${item.name}": ${err instanceof Error ? err.message : 'unknown error'}`);
+        errors.push(`"${item.name}": ${errorMessage(err)}`);
       }
     }
 

@@ -9,6 +9,23 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+// Supabase/Postgres errors are real Error instances, but defensively handle
+// any thrown value (e.g. a plain object) so callers never surface "unknown error".
+export function errorMessage(err: unknown, fallback = 'unknown error'): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return fallback;
+}
+
+// True when `err` is a UNIQUE-constraint violation on the given column — matches both
+// better-sqlite3's message format and Postgres's SQLSTATE 23505 (unique_violation).
+export function isUniqueConstraintError(err: unknown, table: string, column: string): boolean {
+  if (err && typeof err === 'object' && (err as { code?: string }).code === '23505') return true;
+  return String(err).includes(`UNIQUE constraint failed: ${table}.${column}`);
+}
+
 export function formatPrice(price: number | undefined | null): string {
   if (price == null) return 'N/A';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price);

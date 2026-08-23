@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUserId } from '@/lib/auth';
 import { checkProfileAccess } from '@/lib/permissions';
+import { errorMessage } from '@/lib/utils';
 import type { WineType } from '@/types';
 
 interface LocationAlloc {
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
 
         added++;
       } catch (err) {
-        errors.push(`"${entry.name}": ${err instanceof Error ? err.message : 'unknown error'}`);
+        errors.push(`"${entry.name}": ${errorMessage(err)}`);
       }
     }
 
